@@ -23,7 +23,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.agent_run import AgentRunStatus
 from app.services.ai.base import AIProvider, AIProviderError, ChatMessage
-from app.tools.base import ToolExecutionError
+from app.tools.base import ToolContext, ToolExecutionError
 from app.tools.registry import ToolRegistry
 
 logger = get_logger(__name__)
@@ -48,7 +48,9 @@ class AgentOrchestrator:
         self.ai_provider = ai_provider
         self.tool_registry = tool_registry
 
-    async def run(self, agent: BaseAgent, user_message: str) -> OrchestratorResult:
+    async def run(
+        self, agent: BaseAgent, user_message: str, context: ToolContext
+    ) -> OrchestratorResult:
         tool_specs = self.tool_registry.specs_for(agent.allowed_tools)
         messages: list[ChatMessage] = [
             ChatMessage(role="system", content=agent.system_prompt),
@@ -107,7 +109,10 @@ class AgentOrchestrator:
 
                 try:
                     output = await self.tool_registry.execute(
-                        call.name, call.arguments, allowed_tool_names=agent.allowed_tools
+                        call.name,
+                        call.arguments,
+                        allowed_tool_names=agent.allowed_tools,
+                        context=context,
                     )
                     tool_trace.append(
                         {

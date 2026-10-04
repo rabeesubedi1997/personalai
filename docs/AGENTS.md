@@ -7,9 +7,12 @@ agents never get unrestricted tool access.
 
 **General Assistant Agent** (`general_assistant.py`) is the one demonstration
 agent: receives a message, the orchestrator lets it select from its 3
-allowed mock tools (`get_current_time`, `search_knowledge_base`,
-`create_task`), executes, returns a result. Registered in
-`agents/registry.py`; run via `POST /api/v1/agents/run`.
+allowed tools (`get_current_time`, `search_knowledge_base`, `create_task`),
+executes, returns a result. Registered in `agents/registry.py`; run via
+`POST /api/v1/agents/run`. As of the Phase 4 follow-up, `search_knowledge_base`
+is a real `MemoryStore`-backed tool, not a mock (see `docs/TOOLS.md`) — this
+agent now does genuine semantic knowledge retrieval, scoped to whatever has
+actually been added via `POST /api/v1/memory` for the caller's tenant.
 
 Every run is bounded by `AGENT_MAX_ITERATIONS` / `AGENT_MAX_TOOL_CALLS` /
 per-tool `timeout_seconds` (`app/core/config.py` + `app/tools/base.py`) —

@@ -15,7 +15,7 @@ from functools import lru_cache
 
 from app.core.logging import get_logger
 from app.services.ai.base import ToolSpec
-from app.tools.base import Tool, ToolExecutionError, ToolOutput
+from app.tools.base import Tool, ToolContext, ToolExecutionError, ToolOutput
 
 logger = get_logger(__name__)
 
@@ -47,7 +47,12 @@ class ToolRegistry:
         return specs
 
     async def execute(
-        self, name: str, arguments: dict, *, allowed_tool_names: list[str]
+        self,
+        name: str,
+        arguments: dict,
+        *,
+        allowed_tool_names: list[str],
+        context: ToolContext,
     ) -> ToolOutput:
         if name not in allowed_tool_names:
             logger.warning("tool_call_denied", tool=name, reason="not_in_agent_allowlist")
@@ -61,7 +66,7 @@ class ToolRegistry:
 
         try:
             return await asyncio.wait_for(
-                tool.execute(**arguments), timeout=tool.timeout_seconds
+                tool.execute(context, **arguments), timeout=tool.timeout_seconds
             )
         except asyncio.TimeoutError as exc:
             logger.error("tool_call_timeout", tool=name, timeout=tool.timeout_seconds)
@@ -78,7 +83,9 @@ class ToolRegistry:
 @lru_cache
 def get_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
+    from app.tools.memory_tools import register_memory_tools
     from app.tools.mock_tools import register_mock_tools
 
     register_mock_tools(registry)
+    register_memory_tools(registry)
     return registry

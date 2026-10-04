@@ -9,6 +9,7 @@ from app.orchestrator import AgentOrchestrator
 from app.schemas.agents import AgentInfo, AgentRunRequest, AgentRunResponse, ToolInfo
 from app.security.deps import get_current_user
 from app.services.ai.factory import get_ai_provider
+from app.tools.base import ToolContext
 from app.tools.registry import get_tool_registry
 
 router = APIRouter()
@@ -50,8 +51,10 @@ async def run_agent(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown agent '{body.agent}'"
         )
 
-    orchestrator = AgentOrchestrator(get_ai_provider(), get_tool_registry())
-    result = await orchestrator.run(agent, body.message)
+    ai_provider = get_ai_provider()
+    orchestrator = AgentOrchestrator(ai_provider, get_tool_registry())
+    context = ToolContext(tenant_id=current_user.tenant_id, db=db, ai_provider=ai_provider)
+    result = await orchestrator.run(agent, body.message, context)
 
     run = AgentRun(
         tenant_id=current_user.tenant_id,

@@ -9,11 +9,15 @@ tool declares its own permission level up front.
 from __future__ import annotations
 
 import enum
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from app.services.ai.base import ToolSpec
+from app.services.ai.base import AIProvider, ToolSpec
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class PermissionLevel(str, enum.Enum):
@@ -37,6 +41,19 @@ class ToolOutput:
     data: dict[str, Any] | None = None
 
 
+@dataclass
+class ToolContext:
+    """Request-scoped dependencies a tool may need — tenant isolation,
+    DB access, and the AI provider (e.g. for embeddings). Built once per
+    agent run by the API layer (app/api/v1/agents.py) and threaded through
+    AgentOrchestrator -> ToolRegistry -> Tool.execute(). A tool that doesn't
+    need any of this (e.g. get_current_time) just ignores it."""
+
+    tenant_id: uuid.UUID
+    db: "AsyncSession"
+    ai_provider: AIProvider
+
+
 class Tool(ABC):
     name: str
     description: str
@@ -46,7 +63,7 @@ class Tool(ABC):
     timeout_seconds: float = 15.0
 
     @abstractmethod
-    async def execute(self, **kwargs: Any) -> ToolOutput:
+    async def execute(self, context: ToolContext, **kwargs: Any) -> ToolOutput:
         """Run the tool. Must raise ToolExecutionError on failure rather
         than returning a result that looks successful (spec Section 47:
         never claim success when an action failed)."""

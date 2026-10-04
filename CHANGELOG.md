@@ -1,5 +1,36 @@
 # Changelog
 
+## Phase 4 follow-up — wire memory into the demo agent (2026-10-04)
+
+Done same-day by explicit request, before moving to Phase 5.
+
+### Added
+- `ToolContext` (`app/tools/base.py`): `tenant_id`, `db` session,
+  `ai_provider`, built per-request in `POST /api/v1/agents/run` and
+  threaded through `AgentOrchestrator.run()` -> `ToolRegistry.execute()` ->
+  `Tool.execute()`. All tools now receive it (most ignore it).
+- `app/tools/memory_tools.py`: real `SearchKnowledgeBaseTool`, replacing
+  the Phase 2 hardcoded-dict mock of the same name — genuine
+  `MemoryStore`-backed cosine-similarity search over the tenant's
+  `knowledge` memory records, with `MATCH_THRESHOLD = 0.55` separating a
+  real match from "no match" (never returns a weak, probably-wrong guess).
+
+### Verified
+- `pytest -q` → 44 passed (net +1; one old mock test replaced by two —
+  real-match and honest-no-match — for the new implementation).
+- Live, real end-to-end via `POST /api/v1/agents/run` against Qwen2.5 3B +
+  nomic-embed-text, 3 scenarios:
+  1. "What are your support hours?" → correctly retrieved and answered from
+     the seeded 24/7 support memory.
+  2. "How long do refunds take?" → correctly retrieved the *different*
+     refund-policy memory, not the support one — confirms real
+     discrimination between documents, not a lucky single-doc test.
+  3. "Do you offer a student discount?" (no matching memory exists) →
+     tool correctly reported no match; the agent told the user the
+     information isn't available rather than guessing. This is the same
+     honesty property verified in the original Phase 2 fix, now proven
+     against real stored data instead of a hardcoded canned answer.
+
 ## Phase 4 — Memory (2026-10-04)
 
 ### Added

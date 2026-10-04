@@ -91,11 +91,15 @@ one.
   `docs/DATABASE_SCHEMA.md` but not implemented, since native Postgres isn't
   installed on this dev machine yet (needs the elevated-shell install still
   pending from Phase 0/1).
-- Memory is **not yet wired into any agent's tool list** — `general_assistant`
-  still uses its Phase 2 hard-coded mock knowledge base, deliberately, so
-  as not to touch already-tested Phase 2 behavior. Wiring a real
-  memory-backed `search_knowledge_base` tool is a natural Phase 6+ task
-  once a real business agent needs it.
+- **Update:** memory *is* now wired into `general_assistant` (done as an
+  explicit follow-up, same day, by request — see below) — its
+  `search_knowledge_base` tool is real, `MemoryStore`-backed semantic
+  search, not the Phase 2 hardcoded dict. This required adding `ToolContext`
+  (tenant_id/db/ai_provider) threaded through `Tool.execute()` ->
+  `ToolRegistry.execute()` -> `AgentOrchestrator.run()`, since a real tool
+  needs real dependencies a mock never did. 1 net new test (44 total);
+  live-verified distinguishing two unrelated knowledge entries and honestly
+  reporting "no match" for an unanswerable question.
 
 ## Phase 5 — Security + Approvals
 Tool permission levels (READ/SAFE_WRITE/SENSITIVE/CRITICAL), human approval

@@ -21,14 +21,28 @@ Permission levels (spec Section 11) are modeled now as `PermissionLevel`
 the agent allow-list** (e.g. requiring human approval before a `CRITICAL`
 tool runs) is Phase 5.
 
-## Mock tools (Phase 2, `tools/mock_tools.py`)
-- `get_current_time` (READ)
-- `search_knowledge_base` (READ) — stands in for the Phase 4 pgvector
-  knowledge base; same name/shape, real implementation later
-- `create_task` (SAFE_WRITE)
+## Tools (as of Phase 4 follow-up)
+- `get_current_time` (READ) — mock, `tools/mock_tools.py`
+- `create_task` (SAFE_WRITE) — mock, `tools/mock_tools.py`
+- `search_knowledge_base` (READ) — **real**, `tools/memory_tools.py`.
+  Graduated from a Phase 2 hardcoded-dict mock to a genuine
+  `MemoryStore`-backed implementation: embeds the query, does cosine
+  similarity search over the tenant's `knowledge`-type memory records, and
+  returns the best match only above `MATCH_THRESHOLD` (0.55, tuned against
+  `nomic-embed-text` — see CHANGELOG for the live verification). Below
+  that, it honestly reports no match rather than returning an
+  unrelated document. Live-verified distinguishing between two unrelated
+  knowledge entries (support hours vs. refund policy) and correctly
+  reporting "no match" for a genuinely unanswerable question.
 
-These are explicitly mocks (spec: "Use mock tools initially") — swapped for
-real connector-backed tools starting Phase 6.
+Tool execution now receives a `ToolContext` (`tenant_id`, `db` session,
+`ai_provider`) — see `app/tools/base.py` — so a tool can do real,
+tenant-scoped work instead of only seeing its LLM-supplied arguments. All
+3 current tools accept it; only `search_knowledge_base` currently uses it.
+
+`get_current_time` and `create_task` remain explicit mocks (spec: "Use mock
+tools initially") — swapped for real implementations starting Phase 6 when
+a real connector exists to back them.
 
 The LLM never gets unrestricted SQL, shell, filesystem, or direct
 production database access — only named, schema-validated tools, resolved
