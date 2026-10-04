@@ -65,14 +65,35 @@ tool. The fact reported (a real viewing was created, with its real id) was
 accurate; only the process description was imprecise. Worth tightening
 `PropertyAgent`'s system prompt if it recurs, not worth a structural fix.
 
-## Planned (Phase 8+)
+## Implemented (Phase 8): HotelBookingAgent (Paradise Nepal)
+`app/connectors/paradise_nepal/agent.py` — third real business agent.
+**Note**: the master spec described Paradise Nepal as film production;
+checking the real site first showed it's a hotel booking platform (see
+`docs/CONNECTORS.md`'s correction note) — this agent reflects the real
+business. Composes `search_hotels`, `get_hotel_details`,
+`check_room_availability`, `create_hotel_booking` with the same core tools
+the other two business agents use.
+
+Live-verified: the strongest multi-tool run of the three integrations so
+far — a 2-turn conversation chained 4 tool calls (search → details →
+availability → booking) with zero hallucinated ids and an accurate final
+summary. Same minor hedging pattern noted for `PropertyAgent` recurred
+here too (an unprompted "subject to additional checks" caveat on a
+`SAFE_WRITE` action that had already succeeded) — see
+`docs/DEVELOPMENT_ROADMAP.md` Phase 8 for the suggested future prompt fix
+across all three business agents.
+
+## Planned (Phase 9+)
 ```
 backend/app/connectors/
 ├── tolemate/agent.py              ✅ ServiceBookingAgent (Phase 6)
 ├── ghar_nepal/agent.py            ✅ PropertyAgent (Phase 7)
-├── paradise_nepal/agent.py        Phase 8
-└── ...
+├── paradise_nepal/agent.py        ✅ HotelBookingAgent (Phase 8)
+└── ... (future businesses, same recipe)
 ```
+With all three spec-named businesses now integrated (mock connectors),
+Phase 9+ shifts to cross-cutting platform features (notifications,
+proactive automation, SaaS) rather than more per-business agents.
 Each new business agent follows the same recipe:
 `docs/CONNECTORS.md` → "Recipe for adding a real business."
 Permissions, escalation rules, and required-data declarations beyond

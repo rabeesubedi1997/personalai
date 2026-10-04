@@ -1,41 +1,56 @@
 # Business Connectors
 
-## Implemented: Tolemate (Phase 6) + Ghar Nepal (Phase 7), both mock
+## Implemented: Tolemate (Phase 6), Ghar Nepal (Phase 7), Paradise Nepal (Phase 8) — all mock
 ```
 backend/app/connectors/
 ├── base.py              # BusinessModule plugin interface
 ├── registry.py           # register_business_module() + the lists tool/agent registries read from
-├── tolemate/
+├── tolemate/              # service marketplace (electricians, plumbers, ...)
 │   ├── connector.py       # TolemateConnector — mock data, real method signatures
 │   ├── mock_data.py       # clearly-labeled fictional providers
 │   ├── tools.py           # search_service_providers, check_provider_availability, create_service_booking
 │   ├── agent.py           # ServiceBookingAgent
 │   └── module.py          # TolemateModule(BusinessModule)
-└── ghar_nepal/
-    ├── connector.py       # GharNepalConnector — mock data, real method signatures
-    ├── mock_data.py       # clearly-labeled fictional property listings
-    ├── tools.py           # search_properties, get_property_details, create_property_enquiry, create_viewing_request
-    ├── agent.py           # PropertyAgent
-    └── module.py          # GharNepalModule(BusinessModule)
+├── ghar_nepal/            # real estate marketplace
+│   ├── connector.py       # GharNepalConnector — mock data, real method signatures
+│   ├── mock_data.py       # clearly-labeled fictional property listings
+│   ├── tools.py           # search_properties, get_property_details, create_property_enquiry, create_viewing_request
+│   ├── agent.py           # PropertyAgent
+│   └── module.py          # GharNepalModule(BusinessModule)
+└── paradise_nepal/        # hotel booking (see correction note below)
+    ├── connector.py       # ParadiseNepalConnector — mock data, real method signatures
+    ├── mock_data.py       # clearly-labeled fictional hotel/room data
+    ├── tools.py           # search_hotels, get_hotel_details, check_room_availability, create_hotel_booking
+    ├── agent.py           # HotelBookingAgent
+    └── module.py          # ParadiseNepalModule(BusinessModule)
 ```
-No real API access has been confirmed for either business, so both
-connectors return fixed mock data in the shape a real integration would —
+No real API access has been confirmed for any of the three, so every
+connector returns fixed mock data in the shape a real integration would —
 nothing invented about real endpoints, credentials, or business rules.
 Swapping in a real API later means rewriting only that connector's method
 bodies; its tools, agent, and the entire core stay unchanged.
 
-Ghar Nepal mattered as a test of the pattern, not just a second business:
-it's a genuinely different domain (real estate vs. service bookings), and
-it was added with the exact same one-line registration, zero other core
-file changes, and the full pre-existing test suite passing unchanged
-before any Ghar Nepal-specific test was written. See
-`docs/DEVELOPMENT_ROADMAP.md` Phase 7 for the live verification, including
-cross-business conversation continuity.
+### Important correction: Paradise Nepal is a hotel booking platform, not film production
+The master spec guessed Paradise Nepal was a film-production business.
+Before building Phase 8, the real site
+(https://paradisenepal.kitetool.com/) was checked directly — it's a
+React/Vite single-page app with no public API docs, but its client JS
+bundle references `hotel`, `hotels`, `rooms`, `checkin`/`checkout`,
+`guests`, `bookings`, `rates`, `packages`, and amenities (`breakfast`,
+`pool`, `wifi`). It's a hotel booking platform. `HotelBookingAgent` and
+`ParadiseNepalConnector` reflect the real business. This is the same rule
+as "don't invent business data" applied one step earlier: when the real
+answer is a quick check away, check it rather than building on a guess
+that happened to be in the original spec.
 
-Paradise Nepal is not built yet (Phase 8) — existing applications
-(gharnepal.kitetool.com, tolemate.kitetool.com, paradisenepal.kitetool.com)
-stay independent either way; connectors call their controlled APIs rather
-than merging databases or rewriting them.
+Ghar Nepal and Paradise Nepal each mattered as a test of the plugin
+pattern, not just as more businesses: three genuinely different domains
+(service bookings, real estate, hotel stays) were each added with the
+exact same one-line registration, zero other core file changes, and the
+full pre-existing test suite passing unchanged before any
+business-specific test was written for either. See
+`docs/DEVELOPMENT_ROADMAP.md` Phase 7/8 for the live verifications,
+including cross-business conversation continuity.
 
 ## The plugin mechanism (how "add a business" actually works)
 

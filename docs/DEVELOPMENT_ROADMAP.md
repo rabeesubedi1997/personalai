@@ -238,8 +238,43 @@ by coincidence.
   architect around, since it's natural-language flavor text, not a false
   claim about what happened or a security-relevant error.
 
-## Phase 8 — Paradise Nepal
-Production enquiries, locations, crew, equipment, estimation.
+## Phase 8 — Paradise Nepal ✅ DONE (mock connector) — spec correction included
+**The master spec described Paradise Nepal as a film-production business.
+Before building anything, the real site
+(https://paradisenepal.kitetool.com/) was checked** — its client JS bundle
+(a React/Vite SPA with no public API docs) references `hotel`, `hotels`,
+`rooms`, `checkin`/`checkout`, `guests`, `bookings`, `rates`, `packages`,
+and amenities (`breakfast`, `pool`, `wifi`). **It is a hotel booking
+platform, not a production company.** Built accordingly — this is the
+right call per the spec's own rule ("do not invent business rules" cuts
+both ways: don't invent a wrong business either, when the real one is a
+quick check away).
+
+- `ParadiseNepalModule` (`app/connectors/paradise_nepal/`): mock
+  `ParadiseNepalConnector` (fictional hotel/room data, shaped consistently
+  with what the real site's own code suggests), 4 tools
+  (`search_hotels`, `get_hotel_details`, `check_room_availability`,
+  `create_hotel_booking`), and `HotelBookingAgent` — third instance of the
+  same composition pattern as Tolemate/Ghar Nepal.
+- Registered with the same one-line pattern — zero other core files
+  touched, confirmed by the full pre-existing 91-test suite passing
+  unchanged before any Paradise Nepal test was written.
+- 12 new tests (91 → 103 total).
+- Live-verified against real Qwen2.5 3B across a 2-turn conversation:
+  turn 1 searched hotels in Pokhara; turn 2 ("book the deluxe room there..."),
+  using the `conversation_id` from turn 1, correctly chained 4 tool calls
+  (re-search → get details → check availability → create booking) with
+  zero hallucinated ids and an accurate final summary (correct booking id,
+  dates, price) — the strongest run of the three business integrations so far.
+- **Recurring minor pattern, now seen twice (Ghar Nepal and Paradise
+  Nepal)**: the model adds an unprompted hedge ("subject to additional
+  checks," "pending human review") to a `SAFE_WRITE` action that actually
+  completed immediately with no approval gate. The underlying facts
+  reported were accurate both times; only the phrasing overstates
+  uncertainty. Worth a prompt tweak across all three business agents in a
+  future pass (e.g. explicitly stating "if the tool confirms success, say
+  it succeeded — don't add approval caveats unless the tool itself is
+  SENSITIVE/CRITICAL"), not urgent enough to block Phase 9.
 
 ## Phase 9 — Communication
 Notification abstraction: email, web, SMS, WhatsApp.

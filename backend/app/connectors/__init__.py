@@ -19,10 +19,12 @@ from app.connectors.registry import (
     register_business_module,
 )
 from app.connectors.ghar_nepal.module import GharNepalModule
+from app.connectors.paradise_nepal.module import ParadiseNepalModule
 from app.connectors.tolemate.module import TolemateModule
 
 register_business_module(TolemateModule())
 register_business_module(GharNepalModule())
+register_business_module(ParadiseNepalModule())
 
 __all__ = [
     "BusinessModule",

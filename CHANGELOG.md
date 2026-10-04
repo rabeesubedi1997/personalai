@@ -1,5 +1,47 @@
 # Changelog
 
+## Phase 8 — Paradise Nepal (2026-10-04)
+
+### Spec correction (done before any code was written)
+The master spec described Paradise Nepal as a film-production business.
+Checked the real site (https://paradisenepal.kitetool.com/) first: it's a
+React/Vite SPA with no public API docs, but its client JS bundle
+references `hotel`, `hotels`, `rooms`, `checkin`/`checkout`, `guests`,
+`bookings`, `rates`, `packages`, and amenities (`breakfast`, `pool`,
+`wifi`) — it's a **hotel booking platform**, not film production. Built
+accordingly, with the correction documented in `docs/CONNECTORS.md` and
+`app/connectors/paradise_nepal/mock_data.py` rather than silently building
+the wrong thing or silently overriding the spec without a trace.
+
+### Added
+- `ParadiseNepalModule` (`app/connectors/paradise_nepal/`): mock
+  `ParadiseNepalConnector` (fictional hotel/room data), 4 tools
+  (`search_hotels`, `get_hotel_details`, `check_room_availability`,
+  `create_hotel_booking`), and `HotelBookingAgent` — third instance of the
+  Phase 6 `BusinessModule` pattern.
+- Registered with the same one-line pattern; zero other core files
+  touched, confirmed by the full pre-existing 91-test suite passing
+  unchanged before any Paradise Nepal test was written.
+- 12 new tests (91 → 103 total).
+
+### Verified
+- `pytest -q` → 103 passed.
+- Live, real end-to-end against Qwen2.5 3B, a 2-turn conversation: turn 1
+  searched hotels in Pokhara; turn 2 ("book the deluxe room there..."),
+  using the `conversation_id` from turn 1, correctly chained 4 tool calls
+  (search → details → availability → booking) with zero hallucinated ids
+  and an accurate final summary (correct booking id, dates, price) — the
+  cleanest multi-tool run of the three business integrations so far.
+
+### Recurring minor pattern, documented across two phases now
+Both `PropertyAgent` (Phase 7) and `HotelBookingAgent` (Phase 8)
+independently added an unprompted hedge ("pending review," "subject to
+additional checks") to a `SAFE_WRITE` action that had already completed
+successfully with no approval gate. The facts reported were accurate both
+times; only the phrasing overstated uncertainty. Flagged as a future
+prompt-tightening task across all three business agents, not treated as
+urgent — see `docs/DEVELOPMENT_ROADMAP.md` Phase 8.
+
 ## Phase 7 — Ghar Nepal (2026-10-04)
 
 ### Added
