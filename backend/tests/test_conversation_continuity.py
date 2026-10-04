@@ -22,7 +22,7 @@ async def test_first_call_without_conversation_id_returns_a_new_one(
     client, unique_email, monkeypatch
 ):
     fake = FakeAIProvider([GenerationResult(content="Hi there!", model="fake")])
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(
@@ -43,7 +43,7 @@ async def test_continuing_a_conversation_replays_prior_turns_to_the_model(
             GenerationResult(content="Sure, I'll book Bikash Electrical for you.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     first = await client.post(
@@ -88,7 +88,7 @@ async def test_conversation_history_persists_across_separate_requests(
             GenerationResult(content="Searching in Lalitpur now.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     r1 = await client.post(
@@ -129,7 +129,7 @@ async def test_continuing_another_tenants_conversation_id_starts_fresh_not_leake
             GenerationResult(content="Hello, how can I help?", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
 
     tenant_a_headers = await _auth_headers(client, unique_email)
     tenant_b_headers = await _auth_headers(client, f"b-{unique_email}")
@@ -174,7 +174,7 @@ async def test_awaiting_approval_turn_is_still_replayable_afterward(
             GenerationResult(content="Understood, still pending.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     first = await client.post(

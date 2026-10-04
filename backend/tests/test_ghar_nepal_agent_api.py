@@ -52,7 +52,7 @@ async def test_search_then_enquiry_workflow(client, unique_email, monkeypatch):
             GenerationResult(content="Your enquiry has been submitted.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(
@@ -96,7 +96,7 @@ async def test_viewing_request_on_sold_property_reported_honestly(
             GenerationResult(content="That property is no longer available.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(
@@ -128,7 +128,7 @@ async def test_ghar_nepal_cancel_viewing_requires_approval(client, unique_email,
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(

@@ -33,7 +33,7 @@ async def test_approval_request_notifies_requester(client, unique_email, monkeyp
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     run_res = await client.post(
@@ -64,7 +64,7 @@ async def test_approving_notifies_requester_of_outcome(client, unique_email, mon
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     run_res = await client.post(
@@ -98,7 +98,7 @@ async def test_rejecting_notifies_requester(client, unique_email, monkeypatch):
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     run_res = await client.post(
@@ -132,7 +132,7 @@ async def test_mark_notification_read(client, unique_email, monkeypatch):
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     await client.post(
@@ -169,7 +169,7 @@ async def test_notifications_are_tenant_isolated(client, unique_email, monkeypat
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     tenant_a_headers = await _auth_headers(client, unique_email)
     tenant_b_headers = await _auth_headers(client, f"b-{unique_email}")
 

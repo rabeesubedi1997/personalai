@@ -236,15 +236,31 @@ agent. The agent *catalog* itself is not a table: it's derived live from
 the platform reads from, so there's exactly one source of truth for "what
 agents exist."
 
+## `agent_api_keys` (post-roadmap — Connect AI Agent)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID, indexed | |
+| agent_slug | string | which agent this key is allowed to run — never overridable by the caller |
+| label | string | human-readable, e.g. "My ToleMate website widget" |
+| key_prefix | string(20) | short, safe-to-display fragment of the raw key (e.g. `pak_ab12`) |
+| key_hash | string(64), unique, indexed | SHA-256 of the raw key; the raw key itself is never stored |
+| is_active | bool | revoke soft-disables rather than deletes |
+| last_used_at | timestamptz, nullable | updated on every successful `POST /api/v1/public/chat` call |
+| created_at / updated_at | timestamptz | |
+
+The raw `pak_`-prefixed key is generated with `secrets.token_urlsafe(32)` and
+shown to the caller exactly once, at creation — it cannot be retrieved again,
+only revoked and replaced. Requests using it hit a system "widget user"
+(one lazily-created `viewer`-role `User` per tenant, `app/services/
+widget_users.py`) rather than a real human user, so widget-originated runs
+still have a valid `user_id` for `AgentRun`/audit purposes without needing a
+real login.
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 6+
 - `workflows`, `workflow_steps` (if the Request/status_history model proves
   insufficient for multi-step business workflows) — reassessed before Phase 6
-- `conversations`, `messages`, `memories` — Phase 4
-- `approvals` — Phase 5
-- `notifications` — Phase 9
-- `audit_logs` — Phase 5
-- `integrations` — Phase 6+
 
 ## Migrations
 Alembic is configured (`backend/alembic/`) against `settings.database_url`.

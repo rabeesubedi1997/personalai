@@ -178,6 +178,52 @@ appear automatically in `GET /api/v1/agents` and their tools in
 `POST /api/v1/agents/run` as `general_assistant`. This is deliberate: a new
 business should never need a new endpoint.
 
+## Integrations — Connect AI Agent (post-roadmap)
+Lets a tenant embed one of its installed agents into an **external** site or
+app (e.g. the tenant's own ToleMate frontend) as a chat widget, without that
+site's visitors ever needing a PersonalOps login.
+
+- `POST /api/v1/integrations/api-keys` — Bearer token, platform-admin only
+  (403 otherwise). `{ agent_slug, label }` → 201 with the raw key in
+  `api_key`, shown **exactly once**:
+  ```json
+  { "id": "...", "agent_slug": "tolemate_service_booking_agent", "label": "My website widget",
+    "key_prefix": "pak_ab12", "is_active": true, "last_used_at": null, "created_at": "...",
+    "api_key": "pak_ab12...<rest only shown here>" }
+  ```
+  404 for an unknown `agent_slug`; 409 if that agent isn't installed for the
+  tenant (install it first via Marketplace).
+- `GET /api/v1/integrations/api-keys` — Bearer token, platform-admin only.
+  Lists this tenant's keys; never includes the raw key again, only
+  `key_prefix`.
+- `DELETE /api/v1/integrations/api-keys/{id}` — revokes (`is_active: false`);
+  a revoked key's `pak_...` value is rejected by the public endpoint below
+  immediately.
+
+### `POST /api/v1/public/chat` — the endpoint the embedded widget calls
+No Bearer token. Auth is the `X-API-Key` header instead:
+```
+POST /api/v1/public/chat
+X-API-Key: pak_ab12...
+Content-Type: application/json
+
+{ "message": "I need a plumber in Kathmandu", "conversation_id": null }
+```
+→ the same response shape as `POST /api/v1/agents/run`. 401 if the key is
+missing, unrecognized, or revoked. The run always uses the agent the key was
+created for — there is no way to pass a different `agent` in the request
+body to redirect a key to another agent. Usage counts toward the owning
+tenant's plan limits exactly like a dashboard-triggered run (402 if the
+tenant is over its plan's `max_agent_runs_per_month`). `conversation_id`
+round-trips the same way as `POST /api/v1/agents/run`, so a widget can
+maintain a multi-turn chat with its visitor.
+
+This endpoint has its own, separately-configured CORS policy
+(`Access-Control-Allow-Origin: *`, see `app/core/public_cors.py`) so it can
+be called from any origin — the external site embedding the widget is, by
+definition, a different origin than the PersonalOps API. Every other
+endpoint in this API keeps the normal, credentialed CORS policy.
+
 ## Planned endpoints (future phases)
 None currently — Phase 7+ adds more business modules the same way Phase 6
 added Tolemate, not changes to this core API surface.

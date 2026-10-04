@@ -51,7 +51,7 @@ async def test_run_agent_executes_tool_and_persists_run(client, unique_email, mo
             GenerationResult(content="The current time was retrieved.", model="fake-qwen"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
 
     headers = await _auth_headers(client, unique_email)
     res = await client.post(

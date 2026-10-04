@@ -10,8 +10,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>
+    // suppressHydrationWarning on <html>/<body> only: browser extensions
+    // (Grammarly, ColorZilla, etc.) inject attributes like
+    // data-gr-ext-installed / cz-shortcut-listen into these tags before
+    // React hydrates, causing a harmless server/client mismatch warning
+    // Next.js explicitly documents as extension-caused. This does not
+    // suppress hydration warnings for anything else in the tree.
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <AuthProvider>
           <Nav />
           {children}

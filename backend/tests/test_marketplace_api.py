@@ -50,7 +50,7 @@ async def test_uninstalling_an_agent_blocks_it_from_running(client, unique_email
     from tests.fakes import FakeAIProvider
 
     fake = FakeAIProvider([GenerationResult(content="hi", model="fake")])
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     # Works before uninstalling.
@@ -85,7 +85,7 @@ async def test_reinstalling_restores_access(client, unique_email, monkeypatch):
     from tests.fakes import FakeAIProvider
 
     fake = FakeAIProvider([GenerationResult(content="hi", model="fake")])
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     await client.post(
@@ -147,7 +147,7 @@ async def test_marketplace_installations_are_tenant_isolated(client, unique_emai
     from tests.fakes import FakeAIProvider
 
     fake = FakeAIProvider([GenerationResult(content="hi", model="fake")])
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
 
     tenant_a_headers = await _auth_headers(client, unique_email)
     tenant_b_headers = await _auth_headers(client, f"b-{unique_email}")

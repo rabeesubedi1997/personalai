@@ -24,7 +24,7 @@ async def test_denied_tool_call_is_audited(client, unique_email, monkeypatch):
             GenerationResult(content="cannot do that", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
     await client.post(
         "/api/v1/agents/run",
@@ -54,7 +54,7 @@ async def test_approval_decision_is_audited(client, unique_email, monkeypatch):
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
     run_res = await client.post(
         "/api/v1/agents/run",
@@ -87,7 +87,7 @@ async def test_audit_logs_are_tenant_isolated(client, unique_email, monkeypatch)
             GenerationResult(content="cannot do that", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     tenant_a_headers = await _auth_headers(client, unique_email)
     tenant_b_headers = await _auth_headers(client, f"b-{unique_email}")
 

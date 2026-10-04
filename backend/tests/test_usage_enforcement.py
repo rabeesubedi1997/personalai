@@ -48,7 +48,7 @@ async def _pin_tenant_to_tiny_plan(email: str, max_runs: int) -> None:
 
 async def test_run_succeeds_under_the_limit(client, unique_email, monkeypatch):
     fake = FakeAIProvider([GenerationResult(content="hi", model="fake")])
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
     await _pin_tenant_to_tiny_plan(unique_email, max_runs=1)
 
@@ -62,7 +62,7 @@ async def test_run_blocked_once_limit_reached(client, unique_email, monkeypatch)
     fake = FakeAIProvider(
         [GenerationResult(content="hi", model="fake"), GenerationResult(content="hi again", model="fake")]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
     await _pin_tenant_to_tiny_plan(unique_email, max_runs=1)
 
@@ -80,7 +80,7 @@ async def test_run_blocked_once_limit_reached(client, unique_email, monkeypatch)
 
 async def test_other_tenants_unaffected_by_one_tenants_limit(client, unique_email, monkeypatch):
     fake = FakeAIProvider([GenerationResult(content="hi", model="fake")])
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
 
     limited_email = f"limited-{unique_email}"
     limited_headers = await _auth_headers(client, limited_email)

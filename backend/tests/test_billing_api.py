@@ -38,7 +38,7 @@ async def test_usage_reflects_actual_agent_runs(client, unique_email, monkeypatc
     from tests.fakes import FakeAIProvider
 
     fake = FakeAIProvider([GenerationResult(content="hi", model="fake")])
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     await client.post(

@@ -9,9 +9,11 @@ from app.api.v1 import (
     auth,
     billing,
     health,
+    integrations,
     marketplace,
     memory,
     notifications,
+    public,
     requests,
     scheduler,
 )
@@ -30,3 +32,5 @@ api_router.include_router(scheduler.router, tags=["scheduler"])
 api_router.include_router(billing.router, tags=["billing"])
 api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(marketplace.router, tags=["marketplace"])
+api_router.include_router(integrations.router, tags=["integrations"])
+api_router.include_router(public.router, tags=["public"])

@@ -69,7 +69,7 @@ async def test_full_search_check_book_workflow(client, unique_email, monkeypatch
             GenerationResult(content="Your booking is confirmed.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(
@@ -114,7 +114,7 @@ async def test_booking_unavailable_date_reported_as_tool_error_not_fabricated_su
             GenerationResult(content="That date isn't available.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(
@@ -146,7 +146,7 @@ async def test_tolemate_cancel_booking_requires_approval(client, unique_email, m
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(

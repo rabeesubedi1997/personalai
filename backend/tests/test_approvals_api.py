@@ -25,7 +25,7 @@ async def _request_cancel_booking(client, headers, monkeypatch) -> dict:
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     res = await client.post(
         "/api/v1/agents/run",
         json={"agent": "general_assistant", "message": "cancel booking BK-1"},

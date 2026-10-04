@@ -165,7 +165,7 @@ async def test_booking_cancellation_approval_flow_is_business_agnostic(
                 ),
             ]
         )
-        monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda f=fake: f)
+        monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda f=fake: f)
 
         run_res = await client.post(
             "/api/v1/agents/run",

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.core.public_cors import PublicCorsMiddleware
 from app.db.base import Base
 from app.db.session import async_session_factory, engine
 from app.scheduler.engine import get_scheduler
@@ -62,6 +63,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Added after the dashboard-restricted CORSMiddleware above so it wraps
+# outermost (Starlette applies middleware in reverse of add order) — see
+# app/core/public_cors.py for why /api/v1/public/* needs a different policy.
+app.add_middleware(PublicCorsMiddleware)
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 

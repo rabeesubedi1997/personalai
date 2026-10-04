@@ -1,5 +1,89 @@
 # Changelog
 
+## Connect AI Agent — Integrations & Public Chat API (2026-10-04) — post-roadmap, by request
+
+### Why
+Live-testing the Tolemate agent against a real "plumbing in Kathmandu" query
+surfaced two separate asks: the agent's tools are still backed by mock data
+(not yet connected to the user's real ToleMate Laravel app — still open, see
+`docs/DEVELOPMENT_ROADMAP.md`), and — the one actually built here — a way to
+embed an agent into *any* external site/app without that site's visitors ever
+needing a PersonalOps login. The requested shape: a "Connect AI Agent" screen
+that hands out a URL + API key per agent, pasted into the external frontend's
+own chat widget.
+
+### Added
+- `AgentApiKey` model (`app/models/api_key.py`) — tenant-scoped, one key per
+  `(agent_slug, label)`. Only a SHA-256 hash (`key_hash`) and a short
+  `key_prefix` (for display, e.g. `pak_ab12`) are stored; the raw `pak_`-
+  prefixed key is shown exactly once, at creation.
+- `app/services/api_keys.py` — `create_api_key` / `list_api_keys` /
+  `revoke_api_key` / `authenticate_api_key` (the last updates `last_used_at`
+  on every successful call, so a key's recency is visible in the dashboard).
+- `app/services/widget_users.py` — `get_or_create_widget_user`: lazily
+  creates one system `User` per tenant (`viewer` role, unusable random
+  password) to act as the "who ran this" actor for widget-originated runs,
+  using the same race-safe own-session pattern as billing/marketplace seeding
+  below.
+- `app/services/agent_execution.py` — the actual agent-run logic (agent
+  lookup, install/usage checks, conversation load/replay, orchestrator call,
+  persistence, approval/notification creation) extracted out of
+  `app/api/v1/agents.py::run_agent` into one shared `execute_agent_run()`
+  function, so the dashboard's JWT-authenticated run endpoint and the new
+  public API-key-authenticated endpoint share one code path rather than two
+  copies that could drift.
+- `POST /api/v1/integrations/api-keys`, `GET /api/v1/integrations/api-keys`,
+  `DELETE /api/v1/integrations/api-keys/{id}` (`app/api/v1/integrations.py`)
+  — platform-admin only; create validates the target agent exists (404) and
+  is installed for the tenant (409 otherwise, matching the marketplace's own
+  install-gating).
+- `POST /api/v1/public/chat` (`app/api/v1/public.py`) — the endpoint an
+  external site's widget actually calls. Auth is `X-API-Key` header, not a
+  Bearer token; the agent run always uses the agent baked into the key
+  (never caller-overridable), so a leaked key can't be used to run a
+  different, possibly more sensitive, agent on the tenant's account.
+- `app/core/public_cors.py` — a second, narrowly-scoped CORS middleware
+  (`Access-Control-Allow-Origin: *`, handles `OPTIONS` preflight directly)
+  applied only to the `/api/v1/public/*` path prefix, added after the main
+  `CORSMiddleware` so it wraps outermost. The dashboard's own API keeps its
+  normal, credentialed CORS policy; only the public widget surface is
+  open-origin, since it's authenticated by API key instead of cookies/JWT.
+- `frontend/app/integrations/page.tsx` — the "Connect AI Agent" dashboard
+  screen: create a key for any installed agent, see the plaintext key and an
+  auto-generated embeddable `<script>` snippet exactly once, list/revoke
+  existing keys (with `last_used_at`).
+- 15 new tests: `tests/test_integrations_api.py` (create/list/revoke,
+  unknown-agent 404, uninstalled-agent 409, non-admin 403, tenant isolation)
+  and `tests/test_public_chat_api.py` (missing/invalid/revoked key → 401,
+  valid key works, CORS header present, conversation continuity, usage
+  counts toward the tenant's billing, key is scoped to its own agent
+  regardless of request body, run history is tenant-isolated).
+
+### Verified
+- `pytest -q` → **165 passed** (150 → 165).
+- Live curl against the running backend: created a real key for
+  `tolemate_service_booking_agent`, called `POST /api/v1/public/chat` with
+  `X-API-Key` and an `Origin: http://tolemate.test` header simulating a real
+  cross-origin widget call — got a real Qwen2.5 response with a real
+  `search_service_providers` tool-trace entry, confirmed
+  `access-control-allow-origin: *` on the response, confirmed the `OPTIONS`
+  preflight returns 200 with the right headers, confirmed `last_used_at`
+  updates after the call.
+- Playwright: signed up a fresh user, opened `/integrations`, created a key
+  labeled "My ToleMate website widget," confirmed the plaintext key and the
+  embed snippet (correct `/api/v1/public/chat` URL and `X-API-Key` header)
+  render correctly, confirmed zero console errors. Screenshot:
+  `integrations_key_created.png`.
+
+### Still open (not done in this pass)
+The Tolemate agent's tools (`search_service_providers`,
+`check_provider_availability`, `create_service_booking`) still call the mock
+`TolemateConnector`, not the user's real ToleMate Laravel app at
+`http://tolemate.test`. The new API key lets an external widget talk to the
+agent, but the agent's answers are only as real as its data source — wiring
+`TolemateConnector` to the real app's API is the next step toward "no human
+interaction needed" for that business specifically.
+
 ## Dashboard UI (2026-10-04) — post-roadmap, by request
 
 With all 13 phases done, built real screens for every backend capability:

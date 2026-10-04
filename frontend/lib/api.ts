@@ -128,6 +128,18 @@ export type Notification = {
   created_at: string;
 };
 
+export type ApiKey = {
+  id: string;
+  agent_slug: string;
+  label: string;
+  key_prefix: string;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+export type ApiKeyCreated = ApiKey & { api_key: string };
+
 export type TenantSummary = {
   id: string;
   name: string;
@@ -209,3 +221,17 @@ export const markNotificationRead = (token: string, id: string) =>
 // --- Admin ---
 
 export const listAdminTenants = (token: string) => request<TenantSummary[]>("/api/v1/admin/tenants", { token });
+
+// --- Integrations (agent API keys for embedding a chat widget elsewhere) ---
+
+export const listApiKeys = (token: string) => request<ApiKey[]>("/api/v1/integrations/api-keys", { token });
+
+export const createApiKey = (token: string, agent_slug: string, label: string) =>
+  request<ApiKeyCreated>("/api/v1/integrations/api-keys", {
+    method: "POST",
+    token,
+    body: { agent_slug, label },
+  });
+
+export const revokeApiKey = (token: string, id: string) =>
+  request<ApiKey>(`/api/v1/integrations/api-keys/${id}`, { method: "DELETE", token });

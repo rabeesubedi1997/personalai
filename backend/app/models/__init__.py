@@ -1,5 +1,6 @@
 from app.models.agent_installation import AgentInstallation
 from app.models.agent_run import AgentRun, AgentRunStatus
+from app.models.api_key import AgentApiKey
 from app.models.approval import Approval, ApprovalStatus
 from app.models.audit_log import AuditLog
 from app.models.billing import Plan, SubscriptionStatus, TenantSubscription
@@ -32,4 +33,5 @@ __all__ = [
     "TenantSubscription",
     "SubscriptionStatus",
     "AgentInstallation",
+    "AgentApiKey",
 ]

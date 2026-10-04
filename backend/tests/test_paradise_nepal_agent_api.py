@@ -66,7 +66,7 @@ async def test_full_search_check_book_workflow(client, unique_email, monkeypatch
             GenerationResult(content="Your stay is booked.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(
@@ -109,7 +109,7 @@ async def test_booking_unavailable_date_reported_honestly(client, unique_email, 
             GenerationResult(content="That date is not available.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(
@@ -136,7 +136,7 @@ async def test_paradise_nepal_cancel_booking_requires_approval(client, unique_em
             ),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(

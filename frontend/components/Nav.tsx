@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/approvals", label: "Approvals" },
   { href: "/billing", label: "Billing" },
   { href: "/notifications", label: "Notifications" },
+  { href: "/integrations", label: "Integrations" },
 ];
 
 export default function Nav() {

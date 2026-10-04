@@ -113,7 +113,7 @@ async def test_new_business_agent_runs_end_to_end(client, unique_email, monkeypa
             GenerationResult(content="Two cinematographers are available.", model="fake"),
         ]
     )
-    monkeypatch.setattr("app.api.v1.agents.get_ai_provider", lambda: fake)
+    monkeypatch.setattr("app.services.agent_execution.get_ai_provider", lambda: fake)
     headers = await _auth_headers(client, unique_email)
 
     res = await client.post(
