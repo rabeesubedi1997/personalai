@@ -13,6 +13,13 @@ Hard limits are enforced here, not left to the model's good behavior:
 
 The orchestrator never claims success when a tool failed or the loop was
 cut off — it returns an explicit status describing what actually happened.
+
+`history` support (added after a live Phase 6 test showed each
+POST /api/v1/agents/run call started a fresh context with no way to
+continue a prior turn): callers may pass prior ChatMessages, which are
+replayed before the new user message. `OrchestratorResult.new_messages`
+returns exactly what this call added (not the replayed history), for the
+caller to persist via ConversationStore and pass back in on the next call.
 """
 from __future__ import annotations
 
@@ -48,6 +55,10 @@ class OrchestratorResult:
     error: str | None = None
     # Set only when status == AWAITING_APPROVAL: {"tool": ..., "arguments": ...}
     pending_approval: dict | None = None
+    # Everything this call added to the conversation (the new user message
+    # plus any assistant/tool messages generated) — NOT the replayed
+    # `history`. Callers persist this to continue the thread later.
+    new_messages: list[ChatMessage] = field(default_factory=list)
 
     @property
     def tool_call_count(self) -> int:
@@ -60,13 +71,19 @@ class AgentOrchestrator:
         self.tool_registry = tool_registry
 
     async def run(
-        self, agent: BaseAgent, user_message: str, context: ToolContext
+        self,
+        agent: BaseAgent,
+        user_message: str,
+        context: ToolContext,
+        history: list[ChatMessage] | None = None,
     ) -> OrchestratorResult:
         tool_specs = self.tool_registry.specs_for(agent.allowed_tools)
-        messages: list[ChatMessage] = [
-            ChatMessage(role="system", content=agent.system_prompt),
-            ChatMessage(role="user", content=user_message),
-        ]
+        messages: list[ChatMessage] = [ChatMessage(role="system", content=agent.system_prompt)]
+        if history:
+            messages.extend(history)
+        new_turn_start = len(messages)
+        messages.append(ChatMessage(role="user", content=user_message))
+
         tool_trace: list[dict] = []
         model_name = ""
 
@@ -81,18 +98,21 @@ class AgentOrchestrator:
                     iterations=iteration,
                     tool_trace=tool_trace,
                     error=str(exc),
+                    new_messages=messages[new_turn_start:],
                 )
 
             model_name = result.model or model_name
 
             if not result.tool_calls:
                 # Model produced a final answer — done.
+                messages.append(ChatMessage(role="assistant", content=result.content))
                 return OrchestratorResult(
                     status=AgentRunStatus.COMPLETED,
                     final_response=result.content,
                     iterations=iteration,
                     tool_trace=tool_trace,
                     model=model_name,
+                    new_messages=messages[new_turn_start:],
                 )
 
             # Model requested one or more tool calls this turn.
@@ -100,13 +120,26 @@ class AgentOrchestrator:
                 ChatMessage(role="assistant", content=result.content, tool_calls=result.tool_calls)
             )
 
-            for call in result.tool_calls:
+            for idx, call in enumerate(result.tool_calls):
                 if len(tool_trace) >= settings.agent_max_tool_calls:
                     logger.warning(
                         "orchestrator_tool_call_limit_reached",
                         agent=agent.name,
                         limit=settings.agent_max_tool_calls,
                     )
+                    # Close out every tool_call in this turn that won't get
+                    # a response, so the persisted conversation stays valid
+                    # to replay (an assistant tool_calls message with a
+                    # dangling, response-less call confuses the chat API
+                    # on the next turn).
+                    for unresolved in result.tool_calls[idx:]:
+                        messages.append(
+                            ChatMessage(
+                                role="tool",
+                                content="Not executed — tool call limit reached for this run.",
+                                tool_call_id=unresolved.id,
+                            )
+                        )
                     return OrchestratorResult(
                         status=AgentRunStatus.ESCALATED,
                         final_response=(
@@ -116,6 +149,7 @@ class AgentOrchestrator:
                         iterations=iteration,
                         tool_trace=tool_trace,
                         model=model_name,
+                        new_messages=messages[new_turn_start:],
                     )
 
                 try:
@@ -144,6 +178,27 @@ class AgentOrchestrator:
                     logger.info(
                         "orchestrator_awaiting_approval", agent=agent.name, tool=exc.tool_name
                     )
+                    messages.append(
+                        ChatMessage(
+                            role="tool",
+                            content=(
+                                f"Pending human approval — '{exc.tool_name}' has not "
+                                "executed yet."
+                            ),
+                            tool_call_id=call.id,
+                        )
+                    )
+                    for unresolved in result.tool_calls[idx + 1 :]:
+                        messages.append(
+                            ChatMessage(
+                                role="tool",
+                                content=(
+                                    "Not executed — a prior action in this turn is "
+                                    "pending approval."
+                                ),
+                                tool_call_id=unresolved.id,
+                            )
+                        )
                     return OrchestratorResult(
                         status=AgentRunStatus.AWAITING_APPROVAL,
                         final_response=(
@@ -154,6 +209,7 @@ class AgentOrchestrator:
                         tool_trace=tool_trace,
                         model=model_name,
                         pending_approval={"tool": exc.tool_name, "arguments": exc.arguments},
+                        new_messages=messages[new_turn_start:],
                     )
                 except ToolExecutionError as exc:
                     logger.warning("tool_call_error", tool=call.name, error=str(exc))
@@ -183,4 +239,5 @@ class AgentOrchestrator:
             iterations=settings.agent_max_iterations,
             tool_trace=tool_trace,
             model=model_name,
+            new_messages=messages[new_turn_start:],
         )

@@ -29,6 +29,7 @@ class AgentRun(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     __tablename__ = "agent_runs"
 
     user_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
     agent_name: Mapped[str] = mapped_column(String(100))
     model: Mapped[str] = mapped_column(String(100), default="")
     request_text: Mapped[str] = mapped_column(Text)

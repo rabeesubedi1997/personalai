@@ -13,6 +13,7 @@ from app.orchestrator import AgentOrchestrator
 from app.schemas.agents import AgentInfo, AgentRunRequest, AgentRunResponse, ToolInfo
 from app.security.deps import get_current_user
 from app.services.ai.factory import get_ai_provider
+from app.services.conversation_store import ConversationStore
 from app.tools.base import ToolContext
 from app.tools.registry import get_tool_registry
 
@@ -55,14 +56,31 @@ async def run_agent(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown agent '{body.agent}'"
         )
 
+    conversation_id = body.conversation_id or uuid.uuid4()
+    conversation_store = ConversationStore(db)
+    history = (
+        await conversation_store.load(
+            tenant_id=current_user.tenant_id, conversation_id=conversation_id
+        )
+        if body.conversation_id is not None
+        else []
+    )
+
     ai_provider = get_ai_provider()
     orchestrator = AgentOrchestrator(ai_provider, get_tool_registry())
     context = ToolContext(tenant_id=current_user.tenant_id, db=db, ai_provider=ai_provider)
-    result = await orchestrator.run(agent, body.message, context)
+    result = await orchestrator.run(agent, body.message, context, history=history)
+
+    await conversation_store.append(
+        tenant_id=current_user.tenant_id,
+        conversation_id=conversation_id,
+        messages=result.new_messages,
+    )
 
     run = AgentRun(
         tenant_id=current_user.tenant_id,
         user_id=current_user.id,
+        conversation_id=conversation_id,
         agent_name=agent.name,
         model=result.model,
         request_text=body.message,
@@ -102,6 +120,7 @@ async def run_agent(
         model=result.model,
         error=result.error,
         approval_id=approval_id,
+        conversation_id=conversation_id,
     )
 
 
@@ -128,6 +147,7 @@ async def list_agent_runs(
             tool_trace=r.tool_trace,
             model=r.model,
             error=r.error,
+            conversation_id=r.conversation_id,
         )
         for r in runs
     ]
@@ -156,4 +176,5 @@ async def get_agent_run(
         tool_trace=run.tool_trace,
         model=run.model,
         error=run.error,
+        conversation_id=run.conversation_id,
     )

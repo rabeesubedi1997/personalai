@@ -170,12 +170,40 @@ one.
 - **Not done, and intentionally out of scope for Phase 6**: notifications
   (Phase 9) and scheduled/automated follow-up (Phase 10) remain stubs —
   only the request→search→book→cancel-with-approval path was built.
-- **Known gap surfaced by the live test, not yet fixed**: no multi-turn
-  conversation continuation exists yet — each `/agents/run` call starts a
-  fresh context. A customer confirming "yes, book it" as a follow-up
-  message currently has nowhere to attach to the prior turn. Revisit when
-  building Request-linked conversations (Phase 3's `Request` model already
-  has the hook point; this needs an actual conversation-thread API).
+- **Gap fixed same day, before moving to Phase 7 (by explicit request)**:
+  multi-turn conversation continuation. See "Phase 6 follow-up" below.
+
+## Phase 6 follow-up — multi-turn conversation continuity ✅ DONE
+- New `ConversationMessage` model + `ConversationStore`
+  (`app/services/conversation_store.py`) — a dedicated, tenant-scoped,
+  ordered thread log. Deliberately NOT built on the Phase 4 Memory system:
+  that embeds every record for semantic search, which would mean an
+  embedding call on every chat turn just to support sequential replay —
+  real latency for no benefit, since replay needs order, not similarity.
+- `AgentOrchestrator.run()` gained an optional `history: list[ChatMessage]`
+  parameter and now returns `new_messages` (exactly what this call added,
+  for the caller to persist) — backward compatible, no existing call site
+  needed to change except the one that now passes history through.
+- `POST /api/v1/agents/run` gained `conversation_id` (request, optional;
+  response, always present). Omit to start fresh; pass the prior
+  response's value back in to continue.
+- **Correctness fix included**: a turn that pauses early (approval
+  required, or the tool-call limit hit mid-turn) used to leave an
+  assistant `tool_calls` message with no matching tool-result message in
+  the conversation log — replaying that back to a chat-completions API on
+  the next turn would be malformed. The orchestrator now synthesizes a
+  "not executed yet" tool-result message for every unresolved call before
+  returning, so every persisted conversation is always valid to replay.
+- 5 new tests (75 → 80 total), including a tenant-isolation check
+  (continuing another tenant's `conversation_id` silently starts fresh
+  rather than leaking their history) and the dangling-tool-call regression
+  check.
+- Live-verified against real Qwen2.5 3B: replayed the exact scenario that
+  exposed the gap — turn 1 found a provider and asked for confirmation;
+  turn 2 ("yes, book it"), using the same `conversation_id`, correctly
+  remembered the provider id and date from turn 1 and booked directly
+  without re-searching. Also verified a conversation paused on
+  `awaiting_approval` continues without error on the next real API call.
 
 ## Phase 7 — Ghar Nepal
 Property search, enquiries, lead qualification, viewing workflow.

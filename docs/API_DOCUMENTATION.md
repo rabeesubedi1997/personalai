@@ -26,6 +26,19 @@ because it tried to use a `SENSITIVE`/`CRITICAL` tool (e.g. `cancel_booking`).
 `approval_id` is set so the caller can act on it via the Approvals endpoints
 below.
 
+### Multi-turn conversations
+`AgentRunRequest` accepts an optional `conversation_id`; the response
+always returns one (freshly generated if you didn't send one). Omit it to
+start a new conversation; pass the previous response's `conversation_id`
+back in to continue it — e.g. the customer replying "yes, book it" to a
+prior turn. History is loaded and replayed automatically
+(`app/services/conversation_store.py`); you never resend prior messages
+yourself. This was added after live-testing Phase 6 showed every call
+starting a fresh context with no way to continue — see
+`docs/DEVELOPMENT_ROADMAP.md` Phase 6 for the full account and
+`tests/test_conversation_continuity.py` for the proof, including that a
+turn paused on `awaiting_approval` still replays correctly afterward.
+
 ## AI (smoke test only — not the agent system)
 - `POST /api/v1/ai/smoke-test` — Bearer token required, `{ prompt }` →
   `{ model, content }`. Calls the configured `AIProvider` directly

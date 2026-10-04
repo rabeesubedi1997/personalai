@@ -1,5 +1,40 @@
 # Changelog
 
+## Phase 6 follow-up — multi-turn conversation continuity (2026-10-04)
+
+Fixed same day, before moving to Phase 7, by explicit request ("fix for
+all before move into next phase").
+
+### Added
+- `ConversationMessage` model + `ConversationStore`
+  (`app/services/conversation_store.py`): a dedicated, tenant-scoped,
+  ordered thread log — intentionally separate from the Phase 4 Memory
+  system (which embeds every record; a chat turn doesn't need semantic
+  search, just ordered replay, so this avoids an embedding call per turn).
+- `AgentOrchestrator.run(..., history=...)` + `OrchestratorResult.new_messages`.
+- `conversation_id` on `AgentRunRequest` (optional) and `AgentRunResponse`
+  (always present) — omit to start fresh, pass back in to continue.
+- Correctness fix bundled in: a turn that pauses early (approval required,
+  or the tool-call limit hit mid-batch) now synthesizes a "not executed
+  yet" tool-result message for every unresolved tool_call before
+  returning, so the persisted conversation is always valid to replay (a
+  dangling assistant `tool_calls` message with no response would otherwise
+  be malformed on the next chat-completions call).
+- 5 new tests (75 → 80 total): replay correctness, cross-call persistence,
+  tenant-isolation of conversation history, and the dangling-tool-call
+  regression check.
+
+### Verified
+- `pytest -q` → 80 passed.
+- Live, real end-to-end against Qwen2.5 3B: replayed the exact scenario
+  that exposed the original gap. Turn 1 ("find an electrician... my name
+  is Ram Shrestha") found a provider and asked for confirmation. Turn 2
+  ("yes, please go ahead and book it"), sent with the `conversation_id`
+  from turn 1, correctly remembered the provider id and date and booked
+  directly — no re-search needed, no information repeated by the caller.
+  Also verified live that a conversation paused on `awaiting_approval`
+  continues on a second real API call without error.
+
 ## Phase 6 — Tolemate integration + business-plugin architecture (2026-10-04)
 
 ### Added

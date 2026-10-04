@@ -140,6 +140,23 @@ Focused on security-relevant and human-decision events, not a duplicate of
 `AgentRun.tool_trace` (which already captures the full turn-by-turn trace
 for successful/failed tool calls within a run).
 
+## `conversation_messages` (Phase 6 follow-up)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID | indexed |
+| conversation_id | UUID, indexed | groups messages into one thread |
+| turn_index | int | authoritative ordering within a conversation (not timestamp-based — avoids SQLite timestamp-collision issues on rapid inserts) |
+| role | string | `user` / `assistant` / `tool` |
+| content | text | |
+| tool_call_id | string, nullable | |
+| tool_calls | JSON | serialized `ToolCall` list, for assistant messages that requested tools |
+| created_at / updated_at | timestamptz | |
+
+Deliberately separate from `memory_records` (Phase 4): this is an ordered
+replay log, not a semantically-searchable store, so writing a turn never
+triggers an embedding call. See `app/services/conversation_store.py`.
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 6+
 - `workflows`, `workflow_steps` (if the Request/status_history model proves
