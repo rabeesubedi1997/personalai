@@ -1,5 +1,98 @@
 # Changelog
 
+## Real Tolemate connector + dynamic Business Connectors (2026-10-04) — post-roadmap, by request
+
+### Why
+Live-testing the Tolemate agent against ToleMate's real homepage surfaced
+a genuine bug: searching "Deep House Cleaning" returned "no providers
+found" even though that exact service, from a real verified vendor
+(Sparkling Clean Services), was visible on the page right next to the
+chat widget. Investigating the real ToleMate backend
+(`D:\laragon\www\ToleMate\backend`) directly — not guessing — found the
+actual cause: the Tolemate agent's tools were still calling the mock
+`TolemateConnector`, which has no idea the real vendor exists. Separately,
+the user asked for this to be made dynamic — addable to any business, not
+hardcoded to Tolemate — and asked to see the full autonomous
+check-availability → book → notify flow actually work against real data.
+
+### Added
+- **`RealTolemateConnector`** (`app/connectors/tolemate/real_connector.py`)
+  — calls the real ToleMate Laravel API. Three real constraints shaped it,
+  discovered by reading ToleMate's actual code rather than assuming:
+  1. ToleMate's schema has **no city/location field anywhere** — not on
+     `services`, not on `vendors`, only `lat`/`lng` on the vendor's own
+     user row. "Kathmandu" is never stored as text, so a plain text search
+     for it could never match, with or without a PersonalOps-side fix.
+     Worked around with a small built-in Nepali-city coordinate table:
+     a recognized location becomes a `lat`/`lng`/`radius` filter on the
+     real search, and falls back to a broad search if that returns
+     nothing; the location shown back to the customer is reverse-derived
+     from the vendor's real coordinates.
+  2. The mock's one "provider" = one service; real ToleMate has one vendor
+     with many services, and the two real endpoints needed take different
+     ids. Solved by encoding both into one opaque `provider_id` string
+     (`"v{vendor_id}-s{service_id}"`) inside the connector — no change to
+     any tool parameter, test, or the agent.
+  3. **No guest booking exists** — every real booking requires an
+     authenticated customer. `create_service_booking` against a real
+     connector now requires a `customer_email` (the LLM is told to ask for
+     one if missing) and transparently registers a brand-new real
+     ToleMate customer account for the chatting visitor via
+     `POST /api/register`, then books as that account. The vendor gets
+     notified by ToleMate itself (in-app + email) — no new notification
+     code needed on the PersonalOps side.
+- **`BusinessConnectorConfig`** model + **Business Connectors** dashboard
+  section (Integrations page) and API
+  (`GET/PUT/DELETE /api/v1/business-connectors/{business_slug}`) — lets an
+  admin point *any* registered business module (Tolemate, Ghar Nepal,
+  Paradise Nepal) at a real API with just a URL, no code change or
+  redeploy. No config for a tenant+business → falls back to that module's
+  bundled mock, unchanged from before this feature existed — verified by
+  the full pre-existing suite passing with zero modifications.
+- `app/connectors/tolemate/connector_factory.py` — the actual DI seam:
+  resolves mock vs. real per tenant, per tool call, from that config.
+- 22 new tests: `test_real_tolemate_connector.py` (stubbed-HTTP unit tests
+  for all three constraints above, including the duplicate-email case),
+  `test_business_connectors_api.py` (CRUD, 403/404/422, tenant isolation),
+  `test_tolemate_connector_switch.py` (proves an agent run actually
+  switches connectors once configured, and that other tenants still get
+  the mock).
+
+### Verified live, against the real stack (not just tests)
+- **The exact reported bug, fixed**: asked the real agent "Deep House
+  Cleaning, i need this services" with the real connector configured →
+  `"Deep House Cleaning by Sparkling Clean Services (Kathmandu, rating
+  4.90, 200.00, id=v2-s3)"` — real vendor, real price, correct city
+  despite ToleMate never storing it as text.
+- **Full autonomous booking, no human involved**: asked the agent to book
+  it for 2026-10-05 with a name and email → tool trace shows
+  `"Booking confirmed: TOLEMATE-20 on 2026-10-05."` Confirmed directly in
+  ToleMate's own database via `artisan tinker`: a real `User` (id 20,
+  claude-ai-test-booking@example.com) and a real `Booking` (id 20,
+  vendor_id 2, service_id 3, status `pending`, price 200.00, scheduled
+  2026-10-05) both exist. ToleMate's own `BookingController` fired its
+  normal vendor notification + email — the business side of "communicate
+  with the customer" needed no new code at all.
+- **The duplicate-account edge case, for free**: the model retried the
+  same booking twice more with the same email; both were correctly
+  rejected with a clear message rather than silently creating duplicate
+  bookings or a confusing error.
+- `pytest -q` → **187 passed** (165 → 187).
+- Playwright: Integrations page's new "Business data connections" section
+  renders all three registered businesses, shows Tolemate as "connected to
+  real API" with its base URL, and Ghar Nepal/Paradise Nepal as "using
+  mock data" with a connect form — zero console errors.
+
+### Known limitation, disclosed rather than hidden
+Qwen2.5:3b (the local CPU model) is not fully reliable at emitting a
+correctly-formed tool call for `create_service_booking` on the first try
+in a long multi-turn conversation — one attempt produced malformed output
+instead of a tool call and had to be retried with a more direct
+instruction. The connector/API code worked correctly every time it was
+actually invoked; the flakiness is the small model's tool-calling
+reliability under this orchestrator's iteration limits, a pre-existing,
+already-documented characteristic of this model size — not a new bug.
+
 ## Connect AI Agent — Integrations & Public Chat API (2026-10-04) — post-roadmap, by request
 
 ### Why

@@ -9,11 +9,23 @@ from __future__ import annotations
 from typing import Any
 
 from app.connectors.tolemate.connector import (
+    MissingCustomerInfoError,
     ProviderNotFoundError,
     ProviderUnavailableError,
-    tolemate_connector,
 )
+from app.connectors.tolemate.connector_factory import get_connector
 from app.tools.base import PermissionLevel, Tool, ToolContext, ToolExecutionError, ToolOutput
+
+
+def _describe_provider(p: dict[str, Any]) -> str:
+    # Mock providers have a flat `name`; real ones additionally have a
+    # separate `vendor_name` and `price` — include whatever's present
+    # rather than assuming either connector's exact shape.
+    label = p["name"]
+    if p.get("vendor_name"):
+        label = f"{label} by {p['vendor_name']}"
+    price_part = f", {p['price']}" if p.get("price") is not None else ""
+    return f"{label} ({p['location']}, rating {p['rating']}{price_part}, id={p['id']})"
 
 
 class SearchServiceProvidersTool(Tool):
@@ -36,15 +48,14 @@ class SearchServiceProvidersTool(Tool):
     async def execute(
         self, context: ToolContext, service: str, location: str | None = None, **kwargs: Any
     ) -> ToolOutput:
-        results = tolemate_connector.search_providers(service, location)
+        connector = await get_connector(context.db, context.tenant_id)
+        results = await connector.asearch_providers(service, location)
         if not results:
             return ToolOutput(
                 content=f"No {service} providers found" + (f" in {location}." if location else "."),
                 data={"providers": []},
             )
-        summary = "; ".join(
-            f"{p['name']} ({p['location']}, rating {p['rating']}, id={p['id']})" for p in results
-        )
+        summary = "; ".join(_describe_provider(p) for p in results)
         return ToolOutput(content=summary, data={"providers": results})
 
 
@@ -65,9 +76,10 @@ class CheckProviderAvailabilityTool(Tool):
     async def execute(
         self, context: ToolContext, provider_id: str, date: str, **kwargs: Any
     ) -> ToolOutput:
+        connector = await get_connector(context.db, context.tenant_id)
         try:
-            available = tolemate_connector.check_availability(provider_id, date)
-        except ProviderNotFoundError as exc:
+            available = await connector.acheck_availability(provider_id, date)
+        except (ProviderNotFoundError, ProviderUnavailableError) as exc:
             raise ToolExecutionError(str(exc)) from exc
         return ToolOutput(
             content=f"Provider {provider_id} is {'available' if available else 'NOT available'} on {date}.",
@@ -87,12 +99,19 @@ class CreateServiceBookingTool(Tool):
             "provider_id": {"type": "string"},
             "date": {"type": "string", "description": "YYYY-MM-DD"},
             "customer_name": {"type": "string"},
+            "customer_email": {
+                "type": "string",
+                "description": (
+                    "The customer's email. Not every connection needs this, but ask for "
+                    "it if a booking attempt says it's required."
+                ),
+            },
             "notes": {"type": "string"},
         },
         "required": ["provider_id", "date", "customer_name"],
     }
     permission_level = PermissionLevel.SAFE_WRITE
-    timeout_seconds = 10.0
+    timeout_seconds = 20.0
 
     async def execute(
         self,
@@ -100,17 +119,19 @@ class CreateServiceBookingTool(Tool):
         provider_id: str,
         date: str,
         customer_name: str,
+        customer_email: str | None = None,
         notes: str = "",
         **kwargs: Any,
     ) -> ToolOutput:
+        connector = await get_connector(context.db, context.tenant_id)
         try:
-            booking = tolemate_connector.create_booking(provider_id, date, customer_name, notes)
-        except (ProviderNotFoundError, ProviderUnavailableError) as exc:
+            booking = await connector.acreate_booking(
+                provider_id, date, customer_name, notes, customer_email
+            )
+        except (ProviderNotFoundError, ProviderUnavailableError, MissingCustomerInfoError) as exc:
             raise ToolExecutionError(str(exc)) from exc
+        provider_part = f" with {booking['provider_name']}" if booking.get("provider_name") else ""
         return ToolOutput(
-            content=(
-                f"Booking confirmed: {booking['booking_id']} with "
-                f"{booking['provider_name']} on {booking['date']}."
-            ),
+            content=f"Booking confirmed: {booking['booking_id']}{provider_part} on {booking['date']}.",
             data=booking,
         )

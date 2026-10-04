@@ -24,11 +24,74 @@ backend/app/connectors/
     ├── agent.py           # HotelBookingAgent
     └── module.py          # ParadiseNepalModule(BusinessModule)
 ```
-No real API access has been confirmed for any of the three, so every
-connector returns fixed mock data in the shape a real integration would —
-nothing invented about real endpoints, credentials, or business rules.
-Swapping in a real API later means rewriting only that connector's method
-bodies; its tools, agent, and the entire core stay unchanged.
+No real API access has been confirmed for Ghar Nepal or Paradise Nepal, so
+those two still return fixed mock data in the shape a real integration
+would. Tolemate's real connector is now implemented — see the next
+section — as the first proof that "swapping in a real API means rewriting
+only that connector's method bodies" actually holds up against a real,
+independently-built Laravel app, not just a test double.
+
+## Tolemate's real connector + dynamic per-tenant config (post-roadmap)
+
+`app/connectors/tolemate/real_connector.py` (`RealTolemateConnector`) calls
+the user's actual ToleMate Laravel app instead of the mock. Which one a
+given tool call uses is decided per-tenant, per-request, by
+`app/connectors/tolemate/connector_factory.py::get_connector()`:
+
+- No `BusinessConnectorConfig` row for this tenant+business → the mock
+  singleton (unchanged default — every existing test and every tenant that
+  hasn't configured anything keeps working exactly as before).
+- A row with `is_enabled=True` and a `base_url` → `RealTolemateConnector`.
+
+That row is set from the dashboard — **Integrations → Business data
+connections** — or directly via `PUT /api/v1/business-connectors/{slug}`
+(see `docs/API_DOCUMENTATION.md`). No code change, no redeploy, no env
+var: an admin pastes a URL and the business switches from mock to real
+immediately. The same screen lists every registered `BusinessModule`
+(Tolemate, Ghar Nepal, Paradise Nepal), so the identical mechanism applies
+the moment any of them gets real API access too — it isn't Tolemate-specific.
+
+### Real constraints this had to work around (discovered, not assumed)
+Reading the actual ToleMate backend (`D:\laragon\www\ToleMate\backend`)
+surfaced three real constraints no amount of guessing would have caught:
+
+1. **No city/location field exists anywhere in the schema.** Not on
+   `services`, not on `vendors` — only a `lat`/`lng` on the vendor's own
+   `User` row, set once at signup. A literal text search for "Kathmandu"
+   can never match anything server-side. `RealTolemateConnector` works
+   around this with a small built-in table of major Nepali cities'
+   coordinates (`_NEPAL_CITY_COORDS`): a recognized location name becomes a
+   `lat`/`lng`/`radius` filter on the real search call, and the *display*
+   location shown back to the customer is the nearest known city to the
+   vendor's actual coordinates — reverse-approximated, not stored. An
+   unrecognized location name is simply dropped rather than failing the
+   search (a plain service-type search beats returning nothing).
+2. **"Provider" (mock) vs. Vendor+Service (real) aren't the same shape.**
+   The mock conflates one provider = one service; ToleMate's real schema
+   has one vendor with many services, and the two endpoints the agent needs
+   take different ids (`GET /api/vendors/{id}/availability` wants a vendor
+   id, `POST /api/bookings` wants a service id). Rather than change the
+   `provider_id` parameter every tool/test already uses,
+   `RealTolemateConnector` encodes both into one opaque string
+   (`"v{vendor_id}-s{service_id}"`) and decodes it internally — the tool
+   layer, the agent, and the LLM never need to know.
+3. **There is no guest/anonymous booking.** Every real ToleMate booking
+   requires an authenticated customer (`customer_id` is a required FK).
+   `create_service_booking` against a real connector therefore requires a
+   `customer_email` (the tool's parameter description tells the LLM to ask
+   for one if missing) and, when booking, calls `POST /api/register` to
+   create a brand-new, real ToleMate customer account for that visitor on
+   the fly (random password they're never told — they can use ToleMate's
+   own "forgot password" flow later if they want to log in directly), then
+   books as that freshly-created account. The vendor is notified by
+   ToleMate itself (in-app notification + email) exactly as if a human had
+   booked through the website — no PersonalOps-side notification code
+   needed for that side of the conversation.
+
+See `tests/test_real_tolemate_connector.py` (stubbed-HTTP unit tests for
+all three behaviors above) and `tests/test_tolemate_connector_switch.py`
+(proves an agent run actually uses the real connector once configured, and
+that an unconfigured tenant still gets the mock) for the mechanical proof.
 
 ### Important correction: Paradise Nepal is a hotel booking platform, not film production
 The master spec guessed Paradise Nepal was a film-production business.

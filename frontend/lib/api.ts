@@ -138,6 +138,23 @@ export type ApiKey = {
   created_at: string;
 };
 
+export type BusinessConnector = {
+  id: string;
+  business_slug: string;
+  base_url: string;
+  is_enabled: boolean;
+  extra_config: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AvailableBusiness = {
+  business_slug: string;
+  name: string;
+  description: string;
+  connector: BusinessConnector | null;
+};
+
 export type ApiKeyCreated = ApiKey & { api_key: string };
 
 export type TenantSummary = {
@@ -235,3 +252,23 @@ export const createApiKey = (token: string, agent_slug: string, label: string) =
 
 export const revokeApiKey = (token: string, id: string) =>
   request<ApiKey>(`/api/v1/integrations/api-keys/${id}`, { method: "DELETE", token });
+
+// --- Business connectors (point a business module at a real API instead of its mock) ---
+
+export const listBusinessConnectors = (token: string) =>
+  request<AvailableBusiness[]>("/api/v1/business-connectors", { token });
+
+export const setBusinessConnector = (
+  token: string,
+  businessSlug: string,
+  base_url: string,
+  extra_config?: Record<string, unknown>
+) =>
+  request<BusinessConnector>(`/api/v1/business-connectors/${businessSlug}`, {
+    method: "PUT",
+    token,
+    body: { base_url, extra_config },
+  });
+
+export const deleteBusinessConnector = (token: string, businessSlug: string) =>
+  request<void>(`/api/v1/business-connectors/${businessSlug}`, { method: "DELETE", token });

@@ -224,6 +224,37 @@ be called from any origin — the external site embedding the widget is, by
 definition, a different origin than the PersonalOps API. Every other
 endpoint in this API keeps the normal, credentialed CORS policy.
 
+## Business Connectors — point a business module at its real API (post-roadmap)
+The other direction of "connect": not embedding an agent elsewhere, but
+telling an existing business module (Tolemate, Ghar Nepal, Paradise Nepal)
+to use its real API instead of the mock data it ships with. See
+`docs/CONNECTORS.md` for the full mechanism and what had to be worked
+around for Tolemate's real connector specifically.
+
+- `GET /api/v1/business-connectors` — Bearer token, platform-admin only.
+  Lists every registered `BusinessModule`, each with its current connector
+  config (`null` if unconfigured, i.e. still using the mock):
+  ```json
+  [{ "business_slug": "tolemate", "name": "tolemate",
+     "description": "Tolemate service marketplace...",
+     "connector": { "id": "...", "base_url": "http://tolemate.test",
+                     "is_enabled": true, "extra_config": null,
+                     "created_at": "...", "updated_at": "..." } },
+   { "business_slug": "ghar_nepal", "name": "ghar_nepal", "description": "...", "connector": null }]
+  ```
+- `PUT /api/v1/business-connectors/{business_slug}` — Bearer token,
+  platform-admin only. `{ base_url, extra_config? }` → upserts the config
+  for this tenant and switches that business to real data immediately (the
+  very next tool call). 404 for a `business_slug` that doesn't match any
+  registered module; 422 for an empty `base_url`.
+- `DELETE /api/v1/business-connectors/{business_slug}` — removes the
+  config; the business reverts to its mock connector on the next tool
+  call. 404 if nothing was configured.
+
+Tenant-scoped like everything else: one tenant configuring Tolemate's real
+URL has no effect on any other tenant, who keep getting the mock until they
+configure their own.
+
 ## Planned endpoints (future phases)
 None currently — Phase 7+ adds more business modules the same way Phase 6
 added Tolemate, not changes to this core API surface.

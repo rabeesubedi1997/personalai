@@ -257,6 +257,28 @@ widget_users.py`) rather than a real human user, so widget-originated runs
 still have a valid `user_id` for `AgentRun`/audit purposes without needing a
 real login.
 
+## `business_connector_configs` (post-roadmap — real business API connections)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID, indexed | |
+| business_slug | string(50), indexed | matches a registered `BusinessModule.name` (e.g. `tolemate`) — validated against the live module registry at write time, not a DB constraint |
+| base_url | string(500) | the business's real API base URL |
+| is_enabled | bool | |
+| extra_config | JSON, nullable | free-form per-business tuning (e.g. a default search radius) |
+| created_at / updated_at | timestamptz | |
+
+Unique on `(tenant_id, business_slug)` — one connector config per tenant
+per business. No credentials column: Tolemate's real connector needs none
+(its search/availability endpoints are public; booking creates a
+just-in-time customer account instead of using a shared credential — see
+`docs/CONNECTORS.md`). A future business module whose real API needs an
+API key would add a column here when that's actually built. Read by
+`app/connectors/<business>/connector_factory.py::get_connector()` on every
+tool call — no row for a tenant+business means that tool call uses the
+bundled mock connector instead, so a tenant that never visits Integrations
+behaves exactly as before this feature existed.
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 6+
 - `workflows`, `workflow_steps` (if the Request/status_history model proves

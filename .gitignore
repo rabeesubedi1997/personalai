@@ -22,6 +22,7 @@ node_modules/
 out/
 frontend/.env*
 !frontend/.env.example
+*.tsbuildinfo
 
 # Logs
 *.log

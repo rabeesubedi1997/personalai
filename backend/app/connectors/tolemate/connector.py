@@ -19,6 +19,12 @@ class ProviderUnavailableError(ValueError):
     pass
 
 
+class MissingCustomerInfoError(ValueError):
+    """Raised when a real connector needs info the mock never required
+    (e.g. an email, to register a real customer account) and the caller
+    didn't supply it. Mock bookings never raise this."""
+
+
 class TolemateConnector:
     def __init__(self) -> None:
         self._providers = MOCK_PROVIDERS
@@ -65,6 +71,31 @@ class TolemateConnector:
         }
         self._bookings[booking_id] = booking
         return booking
+
+    # --- Async wrappers -------------------------------------------------
+    # The real connector (real_connector.py) does actual network I/O, so
+    # its methods are async. Tools call through this same async interface
+    # for both, rather than branching on which connector they got back —
+    # these wrappers just call the sync logic above directly (no real I/O
+    # here, so there's nothing to actually await).
+
+    async def asearch_providers(self, service: str, location: str | None = None) -> list[dict]:
+        return self.search_providers(service, location)
+
+    async def acheck_availability(self, provider_id: str, date: str) -> bool:
+        return self.check_availability(provider_id, date)
+
+    async def acreate_booking(
+        self,
+        provider_id: str,
+        date: str,
+        customer_name: str,
+        notes: str = "",
+        customer_email: str | None = None,
+    ) -> dict:
+        # customer_email is accepted (and ignored) so tools.py can pass it
+        # uniformly to whichever connector it got back.
+        return self.create_booking(provider_id, date, customer_name, notes)
 
 
 # Module-level singleton — mirrors how a real connector would hold one

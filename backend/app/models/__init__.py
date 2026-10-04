@@ -4,6 +4,7 @@ from app.models.api_key import AgentApiKey
 from app.models.approval import Approval, ApprovalStatus
 from app.models.audit_log import AuditLog
 from app.models.billing import Plan, SubscriptionStatus, TenantSubscription
+from app.models.business_connector import BusinessConnectorConfig
 from app.models.conversation import ConversationMessage
 from app.models.memory import MemoryRecord, MemoryType
 from app.models.notification import Notification, NotificationChannel, NotificationStatus
@@ -34,4 +35,5 @@ __all__ = [
     "SubscriptionStatus",
     "AgentInstallation",
     "AgentApiKey",
+    "BusinessConnectorConfig",
 ]
