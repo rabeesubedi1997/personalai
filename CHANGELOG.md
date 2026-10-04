@@ -1,5 +1,45 @@
 # Changelog
 
+## Phase 2 — AI Core (2026-10-04)
+
+### Added
+- `app/tools/`: `Tool` base class, `ToolRegistry` (allow-list enforcement +
+  per-tool timeout), 3 mock tools (`get_current_time`,
+  `search_knowledge_base`, `create_task`).
+- `app/agents/`: `BaseAgent`, `GeneralAssistantAgent` (the Phase 2 demo
+  agent), agent registry.
+- `app/orchestrator/engine.py`: `AgentOrchestrator` — the controlled agent
+  loop, hard-capped by `AGENT_MAX_ITERATIONS` / `AGENT_MAX_TOOL_CALLS` /
+  per-tool timeout; returns an explicit status
+  (`completed`/`failed`/`max_iterations_reached`/`escalated`), never
+  reports success for a run that was cut off.
+- `AgentRun` model — persists every run's full tool trace for auditability.
+- `GET /api/v1/agents`, `GET /api/v1/tools`, `POST /api/v1/agents/run`.
+- 14 new tests (9 → 23 total): orchestrator loop-limit and tool-call-limit
+  enforcement, unauthorized-tool denial, tool registry behavior, agent API
+  flow (all against a deterministic fake provider for CI reliability).
+
+### Verified
+- `pytest -q` → 23 passed.
+- Live, real end-to-end runs against **Ollama + qwen2.5:3b-instruct** via
+  `POST /api/v1/agents/run`: time lookup, knowledge-base lookup, and task
+  creation all correctly selected and executed the right tool
+  (~9–40s/run on CPU depending on how many tool round-trips were needed).
+
+### Caught and fixed during live verification (reported honestly, not glossed over)
+With the initial system prompt ("use tools when needed"), Qwen2.5 3B
+answered "What are your support hours?" by **inventing** an answer ("9 AM
+to 5 PM UTC") instead of calling `search_knowledge_base` — a direct
+violation of the spec's "never invent business data" rule. Root cause: a
+3B model doesn't reliably infer *when* a question needs a tool from a soft
+instruction. Fix: rewrote `GeneralAssistantAgent.system_prompt` to mandate
+tool use per fact category explicitly. Re-verified live: the model now
+calls the tool every time for this class of question, and for a query the
+mock knowledge base has no answer for ("Do you offer a student discount?"),
+it honestly reports the information is unavailable instead of fabricating
+one. Documented in `docs/AGENTS.md` as a standing requirement for every
+future agent's system prompt, not a one-off fix.
+
 ## Phase 1 — Platform Foundation (2026-10-04)
 
 ### Added

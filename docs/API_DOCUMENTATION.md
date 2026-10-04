@@ -26,8 +26,29 @@ whole app down.
   provider wiring works; it is **not** where agent/tool logic will live —
   that begins in Phase 2's orchestrator, exposed at a different endpoint.
 
+## Agents & Tools (Phase 2)
+- `GET /api/v1/agents` — Bearer token required → list of registered agents
+  (`name`, `description`, `allowed_tools`).
+- `GET /api/v1/tools` — Bearer token required → list of registered tools
+  (`name`, `description`, `permission_level`, `requires_approval`).
+- `POST /api/v1/agents/run` — Bearer token required, `{ agent, message }` →
+  runs the AI Orchestrator for the named agent and persists an `AgentRun`
+  row. Response:
+  ```json
+  {
+    "run_id": "...", "agent": "general_assistant",
+    "status": "completed",
+    "final_response": "...",
+    "iterations": 2,
+    "tool_trace": [{"tool": "get_current_time", "arguments": {}, "result": "...", "is_error": false}],
+    "model": "qwen2.5:3b-instruct",
+    "error": null
+  }
+  ```
+  `status` is one of `completed` / `failed` / `max_iterations_reached` /
+  `escalated` — the orchestrator never reports `completed` for a run that
+  was actually cut off by a limit or failed. 404s for an unknown `agent`.
+
 ## Planned endpoints (future phases)
-- `POST /api/v1/agents/run`, `GET /api/v1/agents` — Phase 2
-- `GET /api/v1/tools` — Phase 2
 - `POST /api/v1/requests`, `GET /api/v1/requests/{id}` — Phase 3
 - `POST /api/v1/approvals/{id}/approve|reject` — Phase 5

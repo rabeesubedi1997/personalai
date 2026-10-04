@@ -26,9 +26,32 @@ onward.
 | is_active | bool | |
 | created_at / updated_at | timestamptz | |
 
+## `agent_runs` (Phase 2)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID | indexed (TenantScopedMixin) |
+| user_id | UUID | who triggered the run |
+| agent_name | string | |
+| model | string | which AI model actually handled it |
+| request_text | text | |
+| final_response | text | |
+| status | enum | completed / failed / max_iterations_reached / escalated |
+| iterations | int | |
+| tool_call_count | int | |
+| tool_trace | JSON | ordered list of `{tool, arguments, result, is_error}` |
+| error | text, nullable | |
+| created_at / updated_at | timestamptz | |
+
+This is the audit trail spec Section 25/31 asks for: every agent run
+answers "what did it do, with which tool, what came back, how did it end."
+Agents/tools themselves are code-defined (`app/agents/`, `app/tools/`), not
+DB-registered yet — a `tools`/`agents` metadata table is deferred until
+there's a real need to configure them without a deploy (e.g. the Phase 12
+marketplace).
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 5
-- `agents`, `tools` (registry metadata) — Phase 2
 - `requests`, `workflows`, `workflow_steps` — Phase 3
 - `conversations`, `messages`, `memories` — Phase 4
 - `approvals` — Phase 5

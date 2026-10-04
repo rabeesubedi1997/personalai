@@ -22,11 +22,27 @@ See [ENVIRONMENT_REPORT.md](../ENVIRONMENT_REPORT.md).
 connectors, approvals, marketplace. The AI provider work above is strictly
 infrastructure verification, not Phase 2's orchestrator.
 
-## Phase 2 — AI Core (next)
-- `AIProvider` interface is already done; add: `BaseAgent` class, a minimal
-  orchestrator loop with iteration/tool-call/timeout limits, a `ToolRegistry`
-  with JSON-schema validated tool definitions, agent execution logs.
-- One demonstration agent ("General Assistant Agent") using 2-3 mock tools.
+## Phase 2 — AI Core ✅ DONE
+- `ToolRegistry` + `Tool` base class (JSON-schema params, permission level,
+  timeout) with 3 mock tools (`get_current_time`, `search_knowledge_base`,
+  `create_task`).
+- `BaseAgent` + one demonstration agent, **General Assistant Agent**, with
+  an explicit `allowed_tools` list.
+- `AgentOrchestrator`: controlled loop (classify→plan→select tool→validate→
+  execute→decide next step→respond), hard-capped by
+  `AGENT_MAX_ITERATIONS` / `AGENT_MAX_TOOL_CALLS` / per-tool timeout —
+  verified with tests that force endless tool-call requests and confirm the
+  loop actually stops.
+- `AgentRun` DB model — every run logged (agent, model, request, full tool
+  trace, status, error).
+- `GET /api/v1/agents`, `GET /api/v1/tools`, `POST /api/v1/agents/run`.
+- 14 new tests (9 → 23 total) covering orchestrator limits, unauthorized-tool
+  denial, tool registry, and the API.
+- **Live-verified against real Ollama + qwen2.5:3b-instruct**, including a
+  caught-and-fixed issue: the model initially fabricated a business answer
+  instead of calling a tool — fixed by making tool-use mandatory per fact
+  category in the system prompt (see `docs/AGENTS.md` for the full
+  before/after). This is now a standing rule for every future agent prompt.
 
 ## Phase 3 — Universal Request Engine
 Generic `Request` lifecycle (RECEIVED → ... → COMPLETED/CANCELLED/FAILED/
