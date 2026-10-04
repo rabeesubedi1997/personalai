@@ -60,6 +60,15 @@ class Settings(BaseSettings):
     agent_max_tool_calls: int = 10
     agent_tool_timeout_seconds: float = 30.0
 
+    # --- Proactive automation (spec Section 21) ---
+    # tests/conftest.py sets SCHEDULER_ENABLED=false defensively; the ASGI
+    # test client doesn't trigger app lifespan anyway, but this keeps the
+    # intent explicit rather than relying on that incidentally.
+    scheduler_enabled: bool = True
+    scheduler_interval_seconds: float = 300.0
+    approval_reminder_after_minutes: int = 15
+    request_stale_after_hours: int = 24
+
 
 @lru_cache
 def get_settings() -> Settings:

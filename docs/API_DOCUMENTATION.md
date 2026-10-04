@@ -114,6 +114,16 @@ response includes `approval_id` to act on.
   (`tool_call_denied`, `approval_approved`, `approval_rejected`,
   `approval_executed`, `approval_execution_failed`). Tenant-scoped.
 
+## Scheduler (Phase 10)
+- `POST /api/v1/scheduler/run` — platform-admin only (403 otherwise).
+  Runs all proactive-automation tasks once, immediately, across every
+  tenant (this is an ops/global action, unlike every other endpoint in
+  this API, which is tenant-scoped). Returns a per-task summary, e.g.
+  `{"failed_agent_run_follow_up": {"checked": 1, "notified": 1}, ...}`.
+  The same tasks also run automatically every `SCHEDULER_INTERVAL_SECONDS`
+  in the background — this endpoint is for forcing a check now or for
+  verification.
+
 ## Notifications (Phase 9)
 All tenant-scoped, Bearer token required, scoped to the caller's own
 notifications (there's no "view another user's notifications" endpoint).

@@ -315,8 +315,44 @@ not something this platform can fully engineer around — logged here as a
 reliability characteristic to keep in mind, same spirit as the earlier
 hallucinated-id and hedging-language findings.
 
-## Phase 10 — Proactive Automation
-Scheduler-triggered agents, monitoring, follow-ups, escalation.
+## Phase 10 — Proactive Automation ✅ DONE (monitoring/escalation slice)
+- `SchedulerEngine` (`app/scheduler/engine.py`): a plain asyncio loop, no
+  external scheduling library (per "don't introduce a complex framework
+  unless required") — started/stopped from `app/main.py`'s lifespan,
+  configurable via `SCHEDULER_ENABLED`/`SCHEDULER_INTERVAL_SECONDS`.
+- 3 generic, business-agnostic `ScheduledTask`s (spec Section 21's
+  morning-check examples, generalized): `FailedAgentRunFollowUpTask`
+  (notify a user once when their agent run fails or exhausts iterations),
+  `StalePendingApprovalReminderTask` (remind the requester once an
+  approval has sat PENDING too long), `StaleRequestEscalationTask`
+  (auto-escalate a `Request` with no update for too long, via the same
+  `RequestEngine` state machine every request already uses). Each tracks
+  its own "already handled" flag so re-running the loop never duplicates
+  a notification.
+- `POST /api/v1/scheduler/run` — manually trigger all tasks once
+  immediately (platform-admin only), for ops and for verification without
+  waiting out the real interval.
+- 10 new tests (114 → 124 total): each task unit-tested directly (fires
+  once, never re-fires, respects terminal/fresh state), plus the API
+  endpoint's RBAC check.
+- Live-verified against the real running server (not just tests): the
+  scheduler actually started on boot (confirmed in logs), a real approval
+  was created via the live Qwen2.5 3B agent, backdated past the reminder
+  threshold, and the manual trigger endpoint correctly sent exactly one
+  "still pending" reminder — then a second trigger correctly sent zero
+  more, proving the idempotency guarantee holds for real, not just in a
+  mocked test.
+
+### Deliberately NOT built (documented scope boundary, not an oversight)
+The spec's full Section 21 diagram is `Scheduler -> Trigger -> Agent ->
+Workflow -> Tool -> Verification -> Notification` — i.e., a timer that
+actually *invokes the agent orchestrator* to take proactive action (e.g.
+"every morning, have an agent re-check all pending Tolemate bookings").
+Phase 10 builds the monitoring/escalation half (detect + notify) using
+direct, lightweight queries — not the agent-invocation half, which is a
+larger, inherently business-specific feature (what should an agent proactively
+check, and for which business?) better built once a real scheduled
+business workflow is needed, rather than speculatively now.
 
 ## Phase 11 — SaaS
 Multi-tenant admin, subscriptions, usage limits, billing.

@@ -1,5 +1,41 @@
 # Changelog
 
+## Phase 10 — Proactive Automation (2026-10-04)
+
+### Added
+- `SchedulerEngine` (`app/scheduler/engine.py`): plain asyncio loop, no
+  external scheduling library — started/stopped from `app/main.py`'s
+  lifespan, configurable via `SCHEDULER_ENABLED`/`SCHEDULER_INTERVAL_SECONDS`.
+- 3 generic `ScheduledTask`s, all business-agnostic:
+  `FailedAgentRunFollowUpTask`, `StalePendingApprovalReminderTask`,
+  `StaleRequestEscalationTask` (the latter reuses the existing
+  `RequestEngine` state machine — no new escalation logic). Each tracks
+  its own "already handled" flag (`agent_runs.escalation_notified`,
+  `approvals.reminder_sent`) so the idempotency guarantee is real, not
+  assumed.
+- `POST /api/v1/scheduler/run` (platform-admin only): manually trigger all
+  tasks once, for ops and verification without waiting out the real
+  interval.
+- 10 new tests (114 → 124 total).
+
+### Verified
+- `pytest -q` → 124 passed.
+- Live, real end-to-end against the running server (not just the test
+  suite): confirmed the scheduler actually starts on boot (log line
+  `scheduler_started`), created a real pending approval via the live
+  Qwen2.5 3B agent, backdated it past the reminder threshold, triggered
+  the scheduler manually, and confirmed exactly one "still pending"
+  reminder notification appeared — then triggered it again and confirmed
+  zero additional notifications, proving the no-duplicate guarantee holds
+  for real, not just under a mocked clock in a test.
+
+### Scope boundary, documented not accidental
+Phase 10 builds the monitoring/escalation half of spec Section 21
+(detect stale/failed state, notify) using direct lightweight queries —
+not the agent-invocation half (a timer that runs the full orchestrator
+proactively), which is a larger, inherently business-specific feature
+better built once a real scheduled business workflow actually needs it.
+
 ## Phase 9 — Communication (2026-10-04)
 
 ### Added

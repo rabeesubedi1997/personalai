@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,6 +9,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.base import Base
 from app.db.session import engine
+from app.scheduler.engine import get_scheduler
 
 configure_logging()
 logger = get_logger(__name__)
@@ -21,8 +23,25 @@ async def lifespan(app: FastAPI):
     if settings.app_env in ("development", "test"):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-    logger.info("app_startup", app_env=settings.app_env, ai_provider=settings.ai_provider)
+
+    scheduler_task: asyncio.Task | None = None
+    if settings.scheduler_enabled:
+        scheduler = get_scheduler()
+        scheduler_task = asyncio.create_task(
+            scheduler.run_forever(settings.scheduler_interval_seconds)
+        )
+
+    logger.info(
+        "app_startup",
+        app_env=settings.app_env,
+        ai_provider=settings.ai_provider,
+        scheduler_enabled=settings.scheduler_enabled,
+    )
     yield
+
+    if scheduler_task is not None:
+        get_scheduler().stop()
+        await scheduler_task
     logger.info("app_shutdown")
 
 

@@ -3,6 +3,9 @@ import uuid
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 os.environ.setdefault("APP_ENV", "test")
+# The ASGI test client doesn't trigger app lifespan anyway, but keep this
+# explicit rather than relying on that incidentally (see app/main.py).
+os.environ.setdefault("SCHEDULER_ENABLED", "false")
 
 import pytest
 import pytest_asyncio

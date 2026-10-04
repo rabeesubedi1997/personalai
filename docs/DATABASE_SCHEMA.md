@@ -178,6 +178,17 @@ For `web`, this row IS the delivery (there's nothing external to fail —
 today's dev-stub providers (`app/services/notifications/channels.py`)
 always report success and log what would have been sent.
 
+### Phase 10 additions to existing tables
+- `agent_runs.escalation_notified` (bool, default `False`) — set once
+  `FailedAgentRunFollowUpTask` has notified the triggering user, so it's
+  never re-notified on a later scheduler tick.
+- `approvals.reminder_sent` (bool, default `False`) — same idea, for
+  `StalePendingApprovalReminderTask`.
+
+No new tables were needed for Phase 10 — the scheduler operates entirely
+on the existing `agent_runs`/`approvals`/`requests` tables, which is the
+point: proactive automation didn't require any business-specific schema.
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 6+
 - `workflows`, `workflow_steps` (if the Request/status_history model proves
