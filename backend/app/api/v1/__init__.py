@@ -1,11 +1,13 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    admin,
     agents,
     ai_smoke,
     approvals,
     audit,
     auth,
+    billing,
     health,
     memory,
     notifications,
@@ -24,3 +26,5 @@ api_router.include_router(approvals.router, tags=["approvals"])
 api_router.include_router(audit.router, tags=["audit"])
 api_router.include_router(notifications.router, tags=["notifications"])
 api_router.include_router(scheduler.router, tags=["scheduler"])
+api_router.include_router(billing.router, tags=["billing"])
+api_router.include_router(admin.router, tags=["admin"])

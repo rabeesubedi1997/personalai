@@ -354,8 +354,52 @@ larger, inherently business-specific feature (what should an agent proactively
 check, and for which business?) better built once a real scheduled
 business workflow is needed, rather than speculatively now.
 
-## Phase 11 — SaaS
-Multi-tenant admin, subscriptions, usage limits, billing.
+## Phase 11 — SaaS ✅ DONE (architecture + enforcement; no real payment processor)
+- `Plan` + `TenantSubscription` models. 3 seeded tiers (free/starter/pro) —
+  this platform's own commercial model (ours to define), not a fact about
+  any external business. Idempotently seeded on startup
+  (`seed_default_plans`), and defensively re-seeded on first use by the
+  test client, which never runs `app.main`'s lifespan.
+- Usage is computed by counting existing `AgentRun` rows in the current
+  calendar month — not a separately-incremented counter, so there's
+  nothing to desync from reality.
+- **Actually enforced, not just modeled**: `POST /api/v1/agents/run`
+  checks usage before running and returns **402 Payment Required** once a
+  tenant's plan limit is hit — the free tier's default limit (1000/month)
+  is generous enough that no existing test or real dev usage hits it by
+  accident; a dedicated test proves the 402 fires using a test-only
+  low-limit plan instead of making 1000 real calls.
+- `GET/POST /api/v1/billing/subscription`, `GET /api/v1/billing/plans` —
+  plan switching is self-service "selection," not a real charge (no
+  Stripe/payment credentials exist or are invented).
+- `GET /api/v1/admin/tenants` (platform-admin only): the one intentionally
+  cross-tenant endpoint in the whole API — multi-tenant administration,
+  gated by role instead of `tenant_id`.
+- 14 new tests (124 → 138 total) — includes two real bugs the tests
+  caught and fixed before commit, not after (see below).
+
+### Two bugs the test suite caught before commit (not after)
+1. `get_plan_by_slug` didn't defensively seed the catalog like `list_plans`
+   did — a test hitting `POST /billing/subscription` as its very first
+   billing call got a spurious 404 on a fresh DB. Fixed by moving the
+   defensive seed into `get_plan_by_slug` itself.
+2. The first fix used "is the `Plan` table empty?" as the seed trigger —
+   broke the moment a *different* test inserted its own one-off test plan
+   first, since the table was no longer empty but still missing the real
+   catalog. Fixed by always calling the already-idempotent
+   `seed_default_plans()` unconditionally rather than gating it behind a
+   fragile emptiness check. Both are logged here because the live
+   verification afterward (real server, real plan catalog, real usage
+   counting, real plan switch, real admin listing) only works because
+   these were caught first.
+
+### Deliberately NOT built (documented scope boundary)
+Real payment processing (Stripe or similar), white-labeling, and custom
+per-tenant workflows are out of scope — all require either real
+credentials this environment doesn't have, or a concrete customer need
+that doesn't exist yet. The architecture (Plan/TenantSubscription,
+enforcement hook point) is built so adding real billing later is "swap the
+plan-switch endpoint's internals for a payment step," not a redesign.
 
 ## Phase 12 — Agent Marketplace
 Agent templates, install/configure flow, versioning.

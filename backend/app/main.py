@@ -8,8 +8,9 @@ from app.api.v1 import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.base import Base
-from app.db.session import engine
+from app.db.session import async_session_factory, engine
 from app.scheduler.engine import get_scheduler
+from app.services.billing import seed_default_plans
 
 configure_logging()
 logger = get_logger(__name__)
@@ -23,6 +24,9 @@ async def lifespan(app: FastAPI):
     if settings.app_env in ("development", "test"):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+
+    async with async_session_factory() as db:
+        await seed_default_plans(db)
 
     scheduler_task: asyncio.Task | None = None
     if settings.scheduler_enabled:

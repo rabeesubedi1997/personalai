@@ -189,6 +189,37 @@ No new tables were needed for Phase 10 — the scheduler operates entirely
 on the existing `agent_runs`/`approvals`/`requests` tables, which is the
 point: proactive automation didn't require any business-specific schema.
 
+## `plans` (Phase 11)
+Platform-wide, not tenant-scoped — every tenant sees the same catalog.
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| slug | string, unique | `free` / `starter` / `pro` |
+| name | string | |
+| price_usd_per_month | float | this platform's own pricing, not a fact about an external business |
+| max_agent_runs_per_month | int | the only limit actually enforced today |
+| max_tool_calls_per_month | int | stored, not yet enforced — finer-grained billing is a future refinement |
+| max_users | int | stored, not yet enforced — no user-invite flow exists yet to check against |
+| created_at / updated_at | timestamptz | |
+
+Seeded idempotently on startup (`seed_default_plans`) and defensively
+re-seeded on first API use (covers the test client, which never runs
+`app.main`'s lifespan).
+
+## `tenant_subscriptions` (Phase 11)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID, unique, indexed | one row per tenant — not `TenantScopedMixin`, since this IS the tenant-to-plan link, not tenant-owned data |
+| plan_id | UUID, indexed | |
+| status | enum | `active` / `trial` / `cancelled` |
+| created_at / updated_at | timestamptz | |
+
+Lazily created on first need (`ensure_subscription`) — defaults to the
+`free` plan, so every tenant created before this feature existed (every
+tenant from Phases 1-10) gets a sensible default the first time its usage
+is checked, with no backfill migration required.
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 6+
 - `workflows`, `workflow_steps` (if the Request/status_history model proves

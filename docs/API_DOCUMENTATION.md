@@ -114,6 +114,26 @@ response includes `approval_id` to act on.
   (`tool_call_denied`, `approval_approved`, `approval_rejected`,
   `approval_executed`, `approval_execution_failed`). Tenant-scoped.
 
+## Billing (Phase 11)
+No real payment processor — plan "selection" is self-service, not a charge.
+- `GET /api/v1/billing/plans` — the platform's 3 tiers (free/starter/pro).
+- `GET /api/v1/billing/subscription` — caller's tenant: current plan,
+  status, and `current_period_agent_runs` (computed from real `AgentRun`
+  rows this calendar month, not a separate counter).
+- `POST /api/v1/billing/subscription` — `{ plan_slug }`, platform-admin
+  only (403 otherwise). 404 for an unknown slug.
+
+`POST /api/v1/agents/run` now also returns **402 Payment Required** if the
+tenant's plan's `max_agent_runs_per_month` has been reached, with the
+current usage and limit in the error detail.
+
+## Admin (Phase 11)
+- `GET /api/v1/admin/tenants` — platform-admin only (403 otherwise). The
+  **one intentionally cross-tenant** endpoint in this entire API: lists
+  every tenant with its user count, plan, and current usage. Everywhere
+  else in this API is strictly tenant-scoped; this one is multi-tenant
+  administration by design, gated by role instead of `tenant_id`.
+
 ## Scheduler (Phase 10)
 - `POST /api/v1/scheduler/run` — platform-admin only (403 otherwise).
   Runs all proactive-automation tasks once, immediately, across every

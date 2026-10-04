@@ -14,6 +14,7 @@ from app.orchestrator import AgentOrchestrator
 from app.schemas.agents import AgentInfo, AgentRunRequest, AgentRunResponse, ToolInfo
 from app.security.deps import get_current_user
 from app.services.ai.factory import get_ai_provider
+from app.services.billing import check_usage_allowed
 from app.services.conversation_store import ConversationStore
 from app.services.notifications.service import NotificationService
 from app.tools.base import ToolContext
@@ -56,6 +57,16 @@ async def run_agent(
     if agent is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown agent '{body.agent}'"
+        )
+
+    allowed, plan, usage = await check_usage_allowed(db, current_user.tenant_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"Monthly agent run limit reached for the '{plan.name}' plan "
+                f"({usage}/{plan.max_agent_runs_per_month}). Upgrade your plan to continue."
+            ),
         )
 
     conversation_id = body.conversation_id or uuid.uuid4()

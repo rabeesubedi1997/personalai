@@ -1,5 +1,50 @@
 # Changelog
 
+## Phase 11 — SaaS (2026-10-04)
+
+### Added
+- `Plan` + `TenantSubscription` models; 3 seeded tiers (free/starter/pro —
+  this platform's own commercial model, not a fact about an external
+  business), idempotently seeded on startup and defensively re-seeded on
+  first API use.
+- Usage computed by counting real `AgentRun` rows in the current calendar
+  month — no separate counter to desync from reality.
+- `POST /api/v1/agents/run` now enforces the plan limit: **402 Payment
+  Required** once a tenant's `max_agent_runs_per_month` is reached.
+- `GET/POST /api/v1/billing/subscription`, `GET /api/v1/billing/plans`.
+  Plan switching is self-service selection (platform-admin only) — no
+  real payment processor integrated or invented.
+- `GET /api/v1/admin/tenants` (platform-admin only): the one intentionally
+  cross-tenant endpoint in the API, for multi-tenant administration.
+- 14 new tests (124 → 138 total).
+
+### Verified
+- `pytest -q` → 138 passed.
+- Live, real end-to-end: plan catalog seeded correctly on real server
+  boot, a real agent run correctly incremented `current_period_agent_runs`
+  from 0 to 1, plan switch to `pro` took effect immediately, and the admin
+  endpoint correctly aggregated user count + plan + usage for the tenant.
+
+### Two bugs the test suite caught before commit
+1. `get_plan_by_slug` lacked the defensive re-seed `list_plans` had —
+   calling `POST /billing/subscription` as the very first billing call in
+   a test hit a spurious 404 on an unseeded DB. Fixed by moving the
+   defensive seed into `get_plan_by_slug` itself.
+2. That fix used "is the `Plan` table empty?" as the seed trigger, which
+   broke as soon as a *different* test inserted its own one-off test plan
+   first — table no longer empty, but still missing the real catalog.
+   Fixed by always calling the already per-slug-idempotent
+   `seed_default_plans()` unconditionally, rather than gating it behind a
+   fragile emptiness check. Both caught and fixed before the live
+   verification above, not discovered by it.
+
+### Documented scope boundary
+Real payment processing, white-labeling, and custom per-tenant workflows
+are out of scope — they need either real credentials this environment
+doesn't have or a concrete need that doesn't exist yet. The architecture
+is built so real billing later is "add a payment step before the plan
+switch commits," not a redesign.
+
 ## Phase 10 — Proactive Automation (2026-10-04)
 
 ### Added
