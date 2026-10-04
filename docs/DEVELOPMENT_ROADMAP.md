@@ -276,8 +276,44 @@ quick check away).
   it succeeded — don't add approval caveats unless the tool itself is
   SENSITIVE/CRITICAL"), not urgent enough to block Phase 9.
 
-## Phase 9 — Communication
-Notification abstraction: email, web, SMS, WhatsApp.
+## Phase 9 — Communication ✅ DONE
+- `NotificationChannelProvider` abstraction (spec Section 22) +
+  `NotificationService` — the one place application code sends a
+  notification from. `GET /api/v1/notifications`,
+  `POST /api/v1/notifications/{id}/read`.
+- `WEB` channel is genuinely functional (the DB row IS the delivery — no
+  external system to mock). `EMAIL`/`SMS`/`WHATSAPP` are clearly-labeled
+  dev stubs (log what would be sent, report success) — no SMTP/Twilio/
+  WhatsApp Business API credentials exist or were invented, same "mock
+  now, swap later" rule as the business connectors.
+- **Wired into something real, not left as unused scaffolding**: creating
+  an approval (a `SENSITIVE`/`CRITICAL` tool call pausing for review) now
+  notifies the requester; approving or rejecting it notifies them again
+  with the outcome. The requester is looked up from the originating
+  `AgentRun`, not assumed to be whoever decides it — correct for the case
+  where a manager approves on behalf of someone else's agent session.
+- 11 new tests (103 → 114 total): channel unit tests, service-level
+  persistence/filtering/tenant-isolation, and the real approval→notify→
+  resolve→notify integration through the API.
+- Live-verified against real Qwen2.5 3B: triggered `cancel_booking`,
+  confirmed exactly one "pending approval" notification appeared, approved
+  it, confirmed a second "approved and completed" notification appeared
+  with the actual tool result in its message — not a canned string.
+
+### New model-reliability finding during live verification (documented, not a system bug)
+On the first live attempt, Qwen2.5 3B didn't use Ollama's structured
+tool-calling response field at all — it printed a literal, malformed
+`<tool_call>{"name": "cancel_booking", ...}</tool_call>` text block as its
+answer instead. Since `result.tool_calls` was genuinely empty, the
+orchestrator correctly treated this as a final text answer (not a bug — it
+can only act on what the API actually returns) and, correctly, no
+notification was created, since no tool call actually happened. A
+rephrased, slightly more explicit prompt on retry triggered proper
+structured tool-calling and the full flow worked. This is a known
+limitation of small (3B-class) models via Ollama's tool-calling interface,
+not something this platform can fully engineer around — logged here as a
+reliability characteristic to keep in mind, same spirit as the earlier
+hallucinated-id and hedging-language findings.
 
 ## Phase 10 — Proactive Automation
 Scheduler-triggered agents, monitoring, follow-ups, escalation.

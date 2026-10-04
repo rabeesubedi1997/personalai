@@ -17,12 +17,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.models.agent_run import AgentRun
 from app.models.approval import Approval, ApprovalStatus
 from app.models.audit_log import AuditLog
+from app.models.notification import NotificationChannel
 from app.models.user import User
 from app.schemas.approvals import ApprovalDecision, ApprovalOut
 from app.security.deps import get_current_user
 from app.services.ai.factory import get_ai_provider
+from app.services.notifications.service import NotificationService
 from app.tools.base import ToolContext, ToolExecutionError
 from app.tools.registry import get_tool_registry
 
@@ -41,6 +44,19 @@ async def _get_tenant_approval(
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
     return approval
+
+
+async def _requester_user_id(
+    db: AsyncSession, approval: Approval, fallback: uuid.UUID
+) -> uuid.UUID:
+    """Who originally triggered the action this approval gates — may differ
+    from whoever approves/rejects it (e.g. a manager deciding on behalf of
+    a staff member's agent session)."""
+    if approval.agent_run_id is None:
+        return fallback
+    result = await db.execute(select(AgentRun.user_id).where(AgentRun.id == approval.agent_run_id))
+    user_id = result.scalar_one_or_none()
+    return user_id or fallback
 
 
 async def _audit(db: AsyncSession, *, tenant_id, event_type, actor, status_, approval, detail):
@@ -152,6 +168,21 @@ async def approve(
 
     await db.commit()
     await db.refresh(approval)
+
+    requester_id = await _requester_user_id(db, approval, fallback=current_user.id)
+    if approval.status == ApprovalStatus.EXECUTED:
+        notify_message = f"Your '{approval.tool_name}' action was approved and completed: {output.content}"
+    else:
+        notify_message = f"Your '{approval.tool_name}' action was approved but failed: {approval.error}"
+    await NotificationService(db).send(
+        tenant_id=current_user.tenant_id,
+        user_id=requester_id,
+        channel=NotificationChannel.WEB,
+        subject="Approval decided",
+        message=notify_message,
+        metadata={"approval_id": str(approval.id), "decision": "approved"},
+    )
+
     return approval
 
 
@@ -184,4 +215,15 @@ async def reject(
         approval=approval,
         detail={"note": body.note},
     )
+
+    requester_id = await _requester_user_id(db, approval, fallback=current_user.id)
+    await NotificationService(db).send(
+        tenant_id=current_user.tenant_id,
+        user_id=requester_id,
+        channel=NotificationChannel.WEB,
+        subject="Approval decided",
+        message=f"Your '{approval.tool_name}' action was rejected" + (f": {body.note}" if body.note else "."),
+        metadata={"approval_id": str(approval.id), "decision": "rejected"},
+    )
+
     return approval

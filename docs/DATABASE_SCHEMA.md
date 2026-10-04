@@ -157,6 +157,27 @@ Deliberately separate from `memory_records` (Phase 4): this is an ordered
 replay log, not a semantically-searchable store, so writing a turn never
 triggers an embedding call. See `app/services/conversation_store.py`.
 
+## `notifications` (Phase 9)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID | indexed |
+| user_id | UUID | indexed — the recipient |
+| channel | enum | `web` / `email` / `sms` / `whatsapp` |
+| subject | string | |
+| message | text | |
+| status | enum | `sent` / `failed` |
+| is_read | bool | web-channel read state |
+| notification_metadata | JSON | e.g. `{approval_id, agent_run_id, provider_message_id}` |
+| error | text, nullable | set only if `failed` |
+| created_at / updated_at | timestamptz | |
+
+For `web`, this row IS the delivery (there's nothing external to fail —
+`status` is always `sent`). For `email`/`sms`/`whatsapp`, `status` and
+`error` reflect the configured provider's real outcome once one exists;
+today's dev-stub providers (`app/services/notifications/channels.py`)
+always report success and log what would have been sent.
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 6+
 - `workflows`, `workflow_steps` (if the Request/status_history model proves

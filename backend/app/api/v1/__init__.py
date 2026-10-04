@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import agents, ai_smoke, approvals, audit, auth, health, memory, requests
+from app.api.v1 import agents, ai_smoke, approvals, audit, auth, health, memory, notifications, requests
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -11,3 +11,4 @@ api_router.include_router(requests.router, tags=["requests"])
 api_router.include_router(memory.router, tags=["memory"])
 api_router.include_router(approvals.router, tags=["approvals"])
 api_router.include_router(audit.router, tags=["audit"])
+api_router.include_router(notifications.router, tags=["notifications"])

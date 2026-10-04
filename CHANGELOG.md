@@ -1,5 +1,39 @@
 # Changelog
 
+## Phase 9 — Communication (2026-10-04)
+
+### Added
+- `NotificationChannelProvider` abstraction + `NotificationService`
+  (`app/services/notifications/`). `WEB` channel is real (an in-app
+  notification's delivery IS the DB row); `EMAIL`/`SMS`/`WHATSAPP` are
+  clearly-labeled dev stubs — no real provider credentials exist or were
+  invented, same pattern as the Phase 6-8 business connectors.
+- `Notification` model, `GET /api/v1/notifications`,
+  `POST /api/v1/notifications/{id}/read`.
+- Wired into the Phase 5 approval flow, not left as unused scaffolding:
+  requesting an approval notifies the requester; approving/rejecting
+  notifies them again with the real outcome. Requester is resolved from
+  the originating `AgentRun`, correctly distinct from whoever decides it.
+- 11 new tests (103 → 114 total).
+
+### Verified
+- `pytest -q` → 114 passed.
+- Live, real end-to-end against Qwen2.5 3B: triggered `cancel_booking`,
+  confirmed exactly one "pending approval" notification, approved it,
+  confirmed a second "approved and completed" notification with the
+  actual tool result (not a canned string) in its message.
+
+### New model-reliability finding (documented, not a system bug)
+On the first live attempt, Qwen2.5 3B printed a literal, malformed
+`<tool_call>{...}</tool_call>` text block instead of using Ollama's
+structured tool-calling response field. Since `result.tool_calls` was
+genuinely empty, the orchestrator correctly treated it as a plain text
+answer — not a bug, since it can only act on what the provider actually
+returns — and correctly created no notification, since no tool call
+happened. A slightly more explicit rephrasing on retry worked correctly.
+Logged as a known 3B-class/Ollama tool-calling reliability characteristic,
+alongside the earlier hallucinated-id and hedging-language findings.
+
 ## Phase 8 — Paradise Nepal (2026-10-04)
 
 ### Spec correction (done before any code was written)

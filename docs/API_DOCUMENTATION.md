@@ -114,6 +114,16 @@ response includes `approval_id` to act on.
   (`tool_call_denied`, `approval_approved`, `approval_rejected`,
   `approval_executed`, `approval_execution_failed`). Tenant-scoped.
 
+## Notifications (Phase 9)
+All tenant-scoped, Bearer token required, scoped to the caller's own
+notifications (there's no "view another user's notifications" endpoint).
+- `GET /api/v1/notifications` — optional `?unread_only=true`. Newest first.
+- `POST /api/v1/notifications/{id}/read`
+Notifications are created automatically by the platform (e.g. an approval
+being requested or decided) — there's no manual "send a notification"
+endpoint yet; that's reserved for whenever a real outbound need (e.g. a
+scheduled follow-up in Phase 10) requires it.
+
 ## Business agents (Phase 6+)
 No new endpoints — business agents (e.g. `tolemate_service_booking_agent`)
 appear automatically in `GET /api/v1/agents` and their tools in

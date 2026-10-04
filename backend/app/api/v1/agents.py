@@ -8,12 +8,14 @@ from app.agents.registry import get_agent, list_agents
 from app.db.session import get_db
 from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.approval import Approval
+from app.models.notification import NotificationChannel
 from app.models.user import User
 from app.orchestrator import AgentOrchestrator
 from app.schemas.agents import AgentInfo, AgentRunRequest, AgentRunResponse, ToolInfo
 from app.security.deps import get_current_user
 from app.services.ai.factory import get_ai_provider
 from app.services.conversation_store import ConversationStore
+from app.services.notifications.service import NotificationService
 from app.tools.base import ToolContext
 from app.tools.registry import get_tool_registry
 
@@ -109,6 +111,18 @@ async def run_agent(
         await db.commit()
         await db.refresh(approval)
         approval_id = approval.id
+
+        await NotificationService(db).send(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            channel=NotificationChannel.WEB,
+            subject="Action pending approval",
+            message=(
+                f"Your request to use '{approval.tool_name}' via {agent.name} is "
+                "pending human approval."
+            ),
+            metadata={"approval_id": str(approval.id), "agent_run_id": str(run.id)},
+        )
 
     return AgentRunResponse(
         run_id=run.id,
