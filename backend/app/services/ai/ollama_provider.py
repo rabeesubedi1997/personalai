@@ -23,6 +23,16 @@ from app.services.ai.base import (
 
 logger = get_logger(__name__)
 
+# Qwen's chat template renders a literal "<tool_call>" tag as part of how
+# Ollama recognizes and parses out a REAL structured tool call — stopping
+# generation there (tried first) breaks tool-calling entirely, since Ollama
+# never gets to see the JSON that was going to follow it. The actual, safe
+# fix is narrower: only stop a hallucinated continuation of the
+# conversation into a fake next turn (seen in practice as a literal
+# "<|im_start|>" appearing in content once the model has already finished
+# its own turn). This leaves real tool-call rendering untouched.
+_RUNAWAY_STOP_SEQUENCES = ["<|im_start|>"]
+
 
 def _message_to_dict(msg: ChatMessage) -> dict[str, Any]:
     d: dict[str, Any] = {"role": msg.role, "content": msg.content}
@@ -82,6 +92,7 @@ class OllamaProvider(AIProvider):
             "model": self.model,
             "messages": [_message_to_dict(m) for m in messages],
             "stream": False,
+            "options": {"stop": _RUNAWAY_STOP_SEQUENCES},
         }
         data = await self._post("/api/chat", payload)
         message = data.get("message", {})
@@ -97,6 +108,7 @@ class OllamaProvider(AIProvider):
             "messages": [_message_to_dict(m) for m in messages],
             "tools": [_tool_spec_to_dict(t) for t in tools],
             "stream": False,
+            "options": {"stop": _RUNAWAY_STOP_SEQUENCES},
         }
         data = await self._post("/api/chat", payload)
         message = data.get("message", {})

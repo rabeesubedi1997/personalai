@@ -1,5 +1,64 @@
 # Changelog
 
+## Tool-call reliability fixes + category-aware search fallback (2026-10-04) — post-roadmap, by request
+
+### Why
+Live chat testing surfaced a real model-reliability bug: on some turns the
+agent's visible reply contained raw chat-template tokens —
+`<tool_call>\n<|im_start|>\nuser\nokie` — a hallucinated continuation of
+the conversation leaking into what the customer sees. Separately, a
+"plumber" search returned nothing even with the real connector correctly
+wired up, because ToleMate's search is a literal substring match and the
+real service is named "Pipe Repair and Installation," not "plumber."
+
+### Fixed
+- **Leaked chat-template tokens / hallucinated fake user turns**
+  (`app/services/ai/ollama_provider.py`): Ollama's `/api/chat` calls had no
+  `stop` sequences at all. When qwen2.5:3b lapsed into its own pretrained
+  text-based tool-call syntax instead of a real structured tool call,
+  nothing stopped generation from running on into a fabricated next turn.
+  Added a `stop: ["<|im_start|>"]` option — narrower than first attempted
+  (`<tool_call>` was also tried and reverted: Qwen's own chat template
+  renders that exact tag as part of how Ollama recognizes and parses a
+  *real* structured tool call, so stopping there broke tool-calling
+  entirely, confirmed via a live regression — `tool_trace: []` on every
+  call — before being caught and fixed within the same session).
+- **Anti-narration system prompt preamble**
+  (`app/orchestrator/engine.py`): a shared instruction, prepended to every
+  agent's own system prompt (not duplicated per-agent), telling the model
+  to call a tool directly rather than announcing it first in text, and
+  never to write a line simulating what the user might say next.
+- **Category-aware search fallback** (`app/connectors/tolemate/
+  real_connector.py`): when a plain-text query matches nothing (e.g.
+  "plumber"), a small term→category map (`plumber`→`Plumbing`,
+  `electrician`→`Electrical`, etc., mirroring the existing Nepali-city
+  table's pragmatic approach) retries the search filtered by ToleMate's
+  own category instead — so natural phrasing finds real services that are
+  simply named differently than how a customer describes them.
+
+### Verified live
+- Reproduced the exact failing conversation, confirmed the `<tool_call>`
+  stop sequence broke tool-calling (empty response, empty tool_trace),
+  reverted to the narrower fix, confirmed real search/booking tool calls
+  fire correctly again.
+- "i need plumbing in kathmandu" → clean single-iteration response
+  listing both real Quick Fix Plumbing services with correct price,
+  rating, and city — no narration, no leaked tokens, no hallucinated turn.
+- `pytest -q` → **189 passed** (187 → 189; 2 new tests for the category
+  fallback, one existing test adjusted to use a service term with no
+  category mapping so it stays isolated from the new behavior).
+
+### Also fixed this session: a real process-hygiene bug, not a product bug
+`rm -f personalops.db test.db` was run before every backend test suite
+run to reset the test database — but `personalops.db` is also the actual
+file the live dev server reads from, and deleting it out from under a
+running server leaves it holding a now-empty file until the next restart
+(no schema, since `create_all` only runs at startup). This silently wiped
+the user's real account and any saved Integrations/Business Connector
+settings multiple times over the session, surfacing as unexplained
+login failures and "connection misconfigured" errors with no code-level
+cause. Going forward, cleanup only ever touches `test.db`.
+
 ## Real Tolemate connector + dynamic Business Connectors (2026-10-04) — post-roadmap, by request
 
 ### Why

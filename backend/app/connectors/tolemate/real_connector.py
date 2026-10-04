@@ -69,6 +69,26 @@ _NEPAL_CITY_COORDS: dict[str, tuple[float, float]] = {
 }
 _DEFAULT_SEARCH_RADIUS_KM = 15.0
 
+# ToleMate's search is a literal substring match against each service's
+# name/description/tags (confirmed by reading ServiceController::search) —
+# it has no fuzzy or semantic matching. A customer (or the LLM on their
+# behalf) naturally says "plumber"; the stored service is literally named
+# "Pipe Repair and Installation", so a plain query for "plumber" finds
+# nothing even though ToleMate's own category list has a "Plumbing"
+# category those services belong to. This maps common ways of describing
+# a service to ToleMate's actual category names, so a query-text miss
+# falls back to a category filter instead of just reporting no results.
+_SERVICE_TERM_TO_CATEGORY: dict[str, str] = {
+    "plumber": "Plumbing", "plumbing": "Plumbing", "pipe": "Plumbing",
+    "electrician": "Electrical", "electrical": "Electrical", "wiring": "Electrical",
+    "cleaner": "Cleaning", "cleaning": "Cleaning", "maid": "Cleaning",
+    "painter": "Painting", "painting": "Painting",
+    "gardener": "Gardening", "gardening": "Gardening", "landscaping": "Gardening",
+    "mover": "Moving Services", "movers": "Moving Services", "moving": "Moving Services",
+    "appliance": "Appliance Repair", "appliance repair": "Appliance Repair",
+    "handyman": "Home Repair", "home repair": "Home Repair", "repair": "Home Repair",
+}
+
 
 def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     r = 6371.0
@@ -140,7 +160,35 @@ class RealTolemateConnector:
                 broad.raise_for_status()
                 items = broad.json().get("data", [])
 
+            # The query text itself may just not literally appear anywhere
+            # on any service (e.g. "plumber" vs. a service literally named
+            # "Pipe Repair and Installation") — fall back to ToleMate's own
+            # category, if the service term maps to one.
+            if not items:
+                category_id = await self._resolve_category_id(client, service)
+                if category_id is not None:
+                    cat_params: dict[str, Any] = {"category_id": category_id}
+                    if geo_center:
+                        cat_params["lat"], cat_params["lng"] = geo_center
+                        cat_params["radius"] = _DEFAULT_SEARCH_RADIUS_KM
+                    cat_resp = await client.get(
+                        f"{self._base_url}/api/services/search", params=cat_params
+                    )
+                    cat_resp.raise_for_status()
+                    items = cat_resp.json().get("data", [])
+
         return [self._to_provider_dict(item) for item in items]
+
+    async def _resolve_category_id(self, client: httpx.AsyncClient, service: str) -> int | None:
+        category_name = _SERVICE_TERM_TO_CATEGORY.get(service.strip().lower())
+        if category_name is None:
+            return None
+        resp = await client.get(f"{self._base_url}/api/categories")
+        resp.raise_for_status()
+        for cat in resp.json():
+            if cat.get("name", "").strip().lower() == category_name.lower():
+                return cat.get("id")
+        return None
 
     def _to_provider_dict(self, item: dict) -> dict:
         vendor = item.get("vendor") or {}

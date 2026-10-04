@@ -99,10 +99,61 @@ async def test_search_unrecognized_location_skips_geo_filter_entirely(monkeypatc
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
 
     connector = RealTolemateConnector("http://tolemate.test")
-    await connector.asearch_providers("plumber", "Nowhereville")
+    # A service term with no category mapping, so only the plain query is
+    # tried — isolates this test from the category-fallback behavior below.
+    await connector.asearch_providers("aquarium cleaning", "Nowhereville")
 
     assert len(calls) == 1
     assert "lat" not in calls[0]
+
+
+async def test_search_falls_back_to_category_when_query_text_matches_nothing(monkeypatch):
+    calls = []
+
+    async def fake_get(self, url, params=None, **kwargs):
+        calls.append((url, params or {}))
+        if url.endswith("/api/categories"):
+            return _json_response(200, [{"id": 8, "name": "Plumbing"}])
+        if (params or {}).get("category_id") == 8:
+            return _json_response(
+                200,
+                {
+                    "data": [
+                        {
+                            "id": 3,
+                            "name": "Pipe Repair and Installation",
+                            "price": "500.00",
+                            "vendor": {"id": 5, "business_name": "Quick Fix Plumbing", "rating": "4.60"},
+                        }
+                    ]
+                },
+            )
+        return _json_response(200, {"data": []})
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    connector = RealTolemateConnector("http://tolemate.test")
+    results = await connector.asearch_providers("plumber")
+
+    assert len(results) == 1
+    assert results[0]["vendor_name"] == "Quick Fix Plumbing"
+    urls = [u for u, _ in calls]
+    assert any(u.endswith("/api/categories") for u in urls)
+
+
+async def test_search_with_unmapped_term_never_calls_categories(monkeypatch):
+    calls = []
+
+    async def fake_get(self, url, params=None, **kwargs):
+        calls.append(url)
+        return _json_response(200, {"data": []})
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    connector = RealTolemateConnector("http://tolemate.test")
+    await connector.asearch_providers("aquarium cleaning")
+
+    assert not any(u.endswith("/api/categories") for u in calls)
 
 
 async def test_check_availability_maps_day_of_week(monkeypatch):
