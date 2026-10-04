@@ -39,3 +39,4 @@ class ServiceBookingAgent(BaseAgent):
         "search_knowledge_base",
         "create_task",
     ]
+    category = "service_booking"

@@ -11,6 +11,7 @@ from app.schemas.auth import LoginRequest, TokenResponse, UserOut
 from app.security.deps import get_current_user
 from app.security.jwt import create_access_token
 from app.security.passwords import hash_password, verify_password
+from app.services.marketplace import ensure_default_agents_installed
 
 router = APIRouter()
 
@@ -73,4 +74,10 @@ async def bootstrap_dev_user(
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    # Spec Section 40: a new tenant gets the standard agent catalog
+    # pre-installed, rather than starting with nothing and requiring a
+    # manual install step before anything works.
+    await ensure_default_agents_installed(db, tenant.id)
+
     return user

@@ -114,6 +114,22 @@ response includes `approval_id` to act on.
   (`tool_call_denied`, `approval_approved`, `approval_rejected`,
   `approval_executed`, `approval_execution_failed`). Tenant-scoped.
 
+## Marketplace (Phase 12)
+- `GET /api/v1/marketplace/agents` — the full catalog (every
+  code-registered agent), each with `installed: bool` for the caller's
+  tenant.
+- `GET /api/v1/marketplace/installed` — only the caller's tenant's
+  installations.
+- `POST /api/v1/marketplace/agents/{slug}/install` — idempotent; 404 for
+  an unknown slug.
+- `POST /api/v1/marketplace/agents/{slug}/uninstall` — soft-disables (not
+  delete); 404 if that agent was never installed for this tenant.
+
+`GET /api/v1/agents` now only lists installed agents, and
+`POST /api/v1/agents/run` 404s for an uninstalled one — every tenant gets
+the full catalog pre-installed at bootstrap, so this only matters once a
+tenant has explicitly uninstalled something.
+
 ## Billing (Phase 11)
 No real payment processor — plan "selection" is self-service, not a charge.
 - `GET /api/v1/billing/plans` — the platform's 3 tiers (free/starter/pro).

@@ -16,6 +16,7 @@ from app.security.deps import get_current_user
 from app.services.ai.factory import get_ai_provider
 from app.services.billing import check_usage_allowed
 from app.services.conversation_store import ConversationStore
+from app.services.marketplace import ensure_default_agents_installed, is_installed
 from app.services.notifications.service import NotificationService
 from app.tools.base import ToolContext
 from app.tools.registry import get_tool_registry
@@ -24,10 +25,17 @@ router = APIRouter()
 
 
 @router.get("/agents", response_model=list[AgentInfo])
-async def list_available_agents(_user: User = Depends(get_current_user)) -> list[AgentInfo]:
+async def list_available_agents(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> list[AgentInfo]:
+    """Lists only agents installed for the caller's tenant (spec Section
+    40: marketplace install/activate) — not every agent that exists in
+    code. See POST /api/v1/marketplace/agents/{slug}/install."""
+    await ensure_default_agents_installed(db, current_user.tenant_id)
     return [
         AgentInfo(name=a.name, description=a.description, allowed_tools=a.allowed_tools)
         for a in list_agents()
+        if await is_installed(db, current_user.tenant_id, a.name)
     ]
 
 
@@ -57,6 +65,16 @@ async def run_agent(
     if agent is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown agent '{body.agent}'"
+        )
+
+    await ensure_default_agents_installed(db, current_user.tenant_id)
+    if not await is_installed(db, current_user.tenant_id, agent.name):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Agent '{agent.name}' is not installed for this tenant. "
+                "Install it via POST /api/v1/marketplace/agents/{slug}/install first."
+            ),
         )
 
     allowed, plan, usage = await check_usage_allowed(db, current_user.tenant_id)

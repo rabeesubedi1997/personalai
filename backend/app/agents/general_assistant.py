@@ -39,3 +39,4 @@ class GeneralAssistantAgent(BaseAgent):
         "create_task",
         "cancel_booking",
     ]
+    category = "general"

@@ -401,8 +401,46 @@ that doesn't exist yet. The architecture (Plan/TenantSubscription,
 enforcement hook point) is built so adding real billing later is "swap the
 plan-switch endpoint's internals for a payment step," not a redesign.
 
-## Phase 12 — Agent Marketplace
-Agent templates, install/configure flow, versioning.
+## Phase 12 — Agent Marketplace ✅ DONE — completes the original roadmap
+- Catalog is derived live from `app.agents.registry.list_agents()` — the
+  same registry every other part of the platform already reads from — so
+  there's one source of truth for "what agents exist," not a second,
+  separately-maintained marketplace table that could drift out of sync.
+  Every agent gained `version`/`category` class attributes
+  (`app/agents/base_agent.py`).
+- `AgentInstallation` model: per-tenant install state, soft-disabled on
+  uninstall (not deleted) for auditability.
+- `GET /api/v1/marketplace/agents` (browse, with `installed` flags),
+  `GET /api/v1/marketplace/installed`,
+  `POST /api/v1/marketplace/agents/{slug}/install|uninstall`.
+- **Actually enforced**: `GET /api/v1/agents` only lists installed agents;
+  `POST /api/v1/agents/run` 404s for an uninstalled one. Proven with a
+  genuine uninstall → blocked → reinstall → restored cycle, not just a
+  schema that stores an `is_enabled` flag nobody checks.
+- **Backward compatibility preserved deliberately**: every tenant gets the
+  full current catalog pre-installed at bootstrap
+  (`ensure_default_agents_installed`), so none of the 138 pre-existing
+  tests from Phases 1-11 needed to change. The installed-agents check only
+  ever auto-populates a tenant that has *zero* installation rows — once a
+  tenant has made any install/uninstall choice, that choice sticks and is
+  never silently overwritten on the next request.
+- 9 new tests (138 → 147 total), including the uninstall-blocks-it /
+  reinstall-restores-it enforcement proof and tenant isolation of
+  installation state.
+- Live-verified against the real running server and real Qwen2.5 3B:
+  browsed the catalog (all 4 agents, pre-installed), ran the Tolemate
+  agent successfully, uninstalled it, confirmed the next run attempt
+  404'd, reinstalled it, confirmed it worked again — the full lifecycle,
+  for real, not simulated.
+
+### This completes every phase in the master spec's original roadmap (Phase 0 → Phase 12).
+Everything from environment discovery through the agent marketplace is
+built, tested, and live-verified against the real local Ollama/Qwen2.5
+stack. See `CHANGELOG.md` for the phase-by-phase history, including every
+bug a test caught before commit and every honestly-reported model
+reliability finding along the way — nothing in this roadmap was declared
+done without a passing test suite and a real, live check against the
+actual running system.
 
 ---
 

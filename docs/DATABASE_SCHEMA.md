@@ -220,6 +220,22 @@ Lazily created on first need (`ensure_subscription`) — defaults to the
 tenant from Phases 1-10) gets a sensible default the first time its usage
 is checked, with no backfill migration required.
 
+## `agent_installations` (Phase 12)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID, indexed | |
+| agent_slug | string, indexed | matches an agent's `name` in the code registry |
+| version_installed | string | snapshot of `agent.version` at install time |
+| is_enabled | bool | uninstall soft-disables rather than deletes, for auditability |
+| created_at / updated_at | timestamptz | |
+
+Unique constraint on `(tenant_id, agent_slug)` — one row per tenant per
+agent. The agent *catalog* itself is not a table: it's derived live from
+`app.agents.registry.list_agents()`, the same registry every other part of
+the platform reads from, so there's exactly one source of truth for "what
+agents exist."
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 6+
 - `workflows`, `workflow_steps` (if the Request/status_history model proves

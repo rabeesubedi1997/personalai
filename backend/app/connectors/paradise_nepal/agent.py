@@ -46,3 +46,4 @@ class HotelBookingAgent(BaseAgent):
         "search_knowledge_base",
         "create_task",
     ]
+    category = "hospitality"

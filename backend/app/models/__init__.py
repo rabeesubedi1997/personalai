@@ -1,3 +1,4 @@
+from app.models.agent_installation import AgentInstallation
 from app.models.agent_run import AgentRun, AgentRunStatus
 from app.models.approval import Approval, ApprovalStatus
 from app.models.audit_log import AuditLog
@@ -30,4 +31,5 @@ __all__ = [
     "Plan",
     "TenantSubscription",
     "SubscriptionStatus",
+    "AgentInstallation",
 ]

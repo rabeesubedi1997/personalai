@@ -39,3 +39,4 @@ class PropertyAgent(BaseAgent):
         "search_knowledge_base",
         "create_task",
     ]
+    category = "real_estate"

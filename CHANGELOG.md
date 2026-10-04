@@ -1,5 +1,37 @@
 # Changelog
 
+## Phase 12 — Agent Marketplace (2026-10-04) — completes the original roadmap
+
+### Added
+- `version`/`category` class attributes on every agent
+  (`app/agents/base_agent.py`); set per agent (`general`, `service_booking`,
+  `real_estate`, `hospitality`).
+- `AgentInstallation` model — per-tenant install state, soft-disabled on
+  uninstall rather than deleted. The catalog itself is not a table: it's
+  derived live from `app.agents.registry.list_agents()`, the same registry
+  every other part of the platform already reads from.
+- `GET /api/v1/marketplace/agents` (browse, with `installed` flags),
+  `GET /api/v1/marketplace/installed`,
+  `POST /api/v1/marketplace/agents/{slug}/install|uninstall`.
+- **Actually enforced**: `GET /api/v1/agents` only lists installed agents;
+  `POST /api/v1/agents/run` 404s for an uninstalled one.
+- Every tenant gets the full catalog pre-installed at bootstrap
+  (`ensure_default_agents_installed`) — deliberately preserves backward
+  compatibility: none of the 138 pre-existing tests from Phases 1-11
+  needed to change. The auto-install only ever fires for a tenant with
+  zero installation rows, so an explicit uninstall is never silently
+  undone.
+- 9 new tests (138 → 147 total), including the uninstall-blocks-it /
+  reinstall-restores-it enforcement proof and tenant isolation of
+  installation state.
+
+### Verified
+- `pytest -q` → 147 passed.
+- Live, real end-to-end against the running server and real Qwen2.5 3B:
+  browsed the catalog (all 4 agents, pre-installed), ran the Tolemate
+  agent successfully, uninstalled it, confirmed the next run attempt
+  404'd, reinstalled it, confirmed it worked again.
+
 ## Phase 11 — SaaS (2026-10-04)
 
 ### Added

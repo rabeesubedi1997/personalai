@@ -83,17 +83,26 @@ here too (an unprompted "subject to additional checks" caveat on a
 `docs/DEVELOPMENT_ROADMAP.md` Phase 8 for the suggested future prompt fix
 across all three business agents.
 
-## Planned (Phase 9+)
+## Agent Marketplace (Phase 12)
+Every agent now carries `version` and `category` (`app/agents/base_agent.py`)
+and is install/uninstall-able per tenant via
+`app/services/marketplace.py` — see `docs/API_DOCUMENTATION.md`'s
+Marketplace section. The catalog is always derived from this same
+registry (`list_agents()`), so a future business agent added via the
+Phase 6 `BusinessModule` mechanism automatically appears in the
+marketplace too, with no extra step.
+
 ```
 backend/app/connectors/
-├── tolemate/agent.py              ✅ ServiceBookingAgent (Phase 6)
-├── ghar_nepal/agent.py            ✅ PropertyAgent (Phase 7)
-├── paradise_nepal/agent.py        ✅ HotelBookingAgent (Phase 8)
+├── tolemate/agent.py              ✅ ServiceBookingAgent (Phase 6) — category: service_booking
+├── ghar_nepal/agent.py            ✅ PropertyAgent (Phase 7) — category: real_estate
+├── paradise_nepal/agent.py        ✅ HotelBookingAgent (Phase 8) — category: hospitality
 └── ... (future businesses, same recipe)
 ```
-With all three spec-named businesses now integrated (mock connectors),
-Phase 9+ shifts to cross-cutting platform features (notifications,
-proactive automation, SaaS) rather than more per-business agents.
+With all three spec-named businesses integrated (mock connectors) and the
+marketplace mechanism in place, future work shifts to real connector
+access (replacing mocks) and any new business categories, rather than
+more core platform scaffolding.
 Each new business agent follows the same recipe:
 `docs/CONNECTORS.md` → "Recipe for adding a real business."
 Permissions, escalation rules, and required-data declarations beyond

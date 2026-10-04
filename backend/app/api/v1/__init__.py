@@ -9,6 +9,7 @@ from app.api.v1 import (
     auth,
     billing,
     health,
+    marketplace,
     memory,
     notifications,
     requests,
@@ -28,3 +29,4 @@ api_router.include_router(notifications.router, tags=["notifications"])
 api_router.include_router(scheduler.router, tags=["scheduler"])
 api_router.include_router(billing.router, tags=["billing"])
 api_router.include_router(admin.router, tags=["admin"])
+api_router.include_router(marketplace.router, tags=["marketplace"])

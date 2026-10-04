@@ -14,3 +14,9 @@ class BaseAgent(ABC):
     description: str
     system_prompt: str
     allowed_tools: list[str] = []
+    # Phase 12 (Agent Marketplace): catalog metadata. Bump `version` when an
+    # agent's behavior changes meaningfully (prompt, tool list) — installed
+    # tenants keep running their installed version's metadata until they
+    # reinstall, same convention as any package marketplace.
+    version: str = "1.0.0"
+    category: str = "general"
