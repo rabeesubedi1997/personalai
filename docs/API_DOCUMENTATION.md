@@ -101,6 +101,14 @@ response includes `approval_id` to act on.
   (`tool_call_denied`, `approval_approved`, `approval_rejected`,
   `approval_executed`, `approval_execution_failed`). Tenant-scoped.
 
+## Business agents (Phase 6+)
+No new endpoints — business agents (e.g. `tolemate_service_booking_agent`)
+appear automatically in `GET /api/v1/agents` and their tools in
+`GET /api/v1/tools` the moment their `BusinessModule` is registered (see
+`docs/CONNECTORS.md`), and run through the exact same
+`POST /api/v1/agents/run` as `general_assistant`. This is deliberate: a new
+business should never need a new endpoint.
+
 ## Planned endpoints (future phases)
-None currently — Phase 6+ adds business-specific endpoints under their own
-connectors, not changes to this core API surface.
+None currently — Phase 7+ adds more business modules the same way Phase 6
+added Tolemate, not changes to this core API surface.

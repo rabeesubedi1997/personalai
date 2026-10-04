@@ -47,7 +47,7 @@ personalops-ai/
 │   │   ├── tools/          # (Phase 2+)
 │   │   ├── workflows/      # (Phase 3+)
 │   │   ├── memory/         # (Phase 4+)
-│   │   ├── connectors/     # (Phase 6+)
+│   │   ├── connectors/     # BusinessModule plugin system + tolemate/ (Phase 6)
 │   │   └── main.py
 │   ├── alembic/            # DB migrations
 │   └── tests/

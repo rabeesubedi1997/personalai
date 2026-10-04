@@ -1,23 +1,73 @@
 # Business Connectors
 
-No connectors exist yet. Planned structure (Phase 6+):
+## Implemented (Phase 6): Tolemate (mock)
 ```
 backend/app/connectors/
-├── ghar_nepal/
-├── tolemate/
-├── paradise_nepal/
-└── common/
+├── base.py              # BusinessModule plugin interface
+├── registry.py           # register_business_module() + the lists tool/agent registries read from
+└── tolemate/
+    ├── connector.py       # TolemateConnector — mock data, real method signatures
+    ├── mock_data.py       # clearly-labeled fictional providers
+    ├── tools.py           # search_service_providers, check_provider_availability, create_service_booking
+    ├── agent.py           # ServiceBookingAgent
+    └── module.py          # TolemateModule(BusinessModule) — wires the above together
 ```
+No real Tolemate API access has been confirmed, so `TolemateConnector`
+returns fixed mock data in the same shape a real integration would —
+nothing invented about real endpoints, credentials, or business rules.
+Swapping in the real API later means rewriting only `connector.py`'s
+method bodies; `tools.py`, `agent.py`, and the entire core stay unchanged.
 
-Existing applications (gharnepal.kitetool.com, tolemate.kitetool.com,
-paradisenepal.kitetool.com) stay independent — connectors call their
-controlled APIs rather than merging databases or rewriting them. Where real
-API docs/access aren't available, mock connectors are built first and swapped
-for real ones later. No real endpoints, schemas, or business rules are
-invented ahead of that access — see the master spec's explicit instruction
-on this.
+Ghar Nepal and Paradise Nepal are not built yet (Phase 7/8) — existing
+applications (gharnepal.kitetool.com, tolemate.kitetool.com,
+paradisenepal.kitetool.com) stay independent either way; connectors call
+their controlled APIs rather than merging databases or rewriting them.
 
-Tolemate is the designated first real integration (Phase 6).
+## The plugin mechanism (how "add a business" actually works)
+
+A business is a `BusinessModule` (`app/connectors/base.py`): its tools +
+its agent(s), nothing more. Registering one is a single function call —
+`register_business_module(YourModule())` — and from that point on,
+`app/tools/registry.py` and `app/agents/registry.py` automatically include
+its tools/agents everywhere (the `/api/v1/tools`, `/api/v1/agents`, and
+`/api/v1/agents/run` endpoints need no changes at all).
+
+This is proven, not just described:
+`backend/tests/test_business_module_extensibility.py` defines an entirely
+new, fictional business (a Paradise Nepal-style film-crew lookup) **inside
+the test file itself** — zero edits to any core file — registers it with
+one call, and shows it immediately appears in the tool/agent listings and
+runs a full agent turn correctly. That test is the actual guarantee behind
+"you can add multiple businesses later," re-checked on every test run, not
+a claim that can silently go stale.
+
+### Recipe for adding a real business (e.g. when Ghar Nepal/Paradise Nepal access exists)
+1. **Connector** (`app/connectors/<business>/connector.py`): functions
+   wrapping that business's real API — never invented endpoints or
+   credentials in code. Start from mock data if real access isn't ready
+   yet, exactly like `TolemateConnector`.
+2. **Tools** (`app/connectors/<business>/tools.py`): thin `Tool` subclasses
+   calling the connector, each with its own `permission_level` — the
+   registry structurally refuses a `SENSITIVE`/`CRITICAL` tool that
+   doesn't require approval (Phase 5), so this can't be gotten wrong
+   silently.
+3. **Agent** (`app/connectors/<business>/agent.py`): a `BaseAgent` with an
+   explicit `allowed_tools` list — mix business-specific tools with core
+   ones (`cancel_booking`, `search_knowledge_base`, `create_task`) as
+   `ServiceBookingAgent` does.
+4. **Module** (`app/connectors/<business>/module.py`): a `BusinessModule`
+   bundling 2+3.
+5. **One line** in `app/connectors/__init__.py`:
+   `register_business_module(<Business>Module())`.
+6. **Request type**: start using a new `request_type` string with the
+   existing generic `POST /api/v1/requests` — no migration needed.
+
+None of steps 1–6 touch `app/services/request_engine.py`,
+`app/orchestrator/engine.py`, `app/tools/registry.py`,
+`app/agents/registry.py`, or any model in `app/models/`. That is the core
+guarantee this phase was built to prove, and both
+`test_multi_business_generality.py` (Phase 5) and
+`test_business_module_extensibility.py` (Phase 6) check it mechanically.
 
 ## Why this is already safe to build later, without touching the core
 

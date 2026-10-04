@@ -1,5 +1,54 @@
 # Changelog
 
+## Phase 6 — Tolemate integration + business-plugin architecture (2026-10-04)
+
+### Added
+- `BusinessModule` plugin system (`app/connectors/base.py`,
+  `app/connectors/registry.py`): a new business registers its tools +
+  agent(s) with one `register_business_module(...)` call; `app/tools/registry.py`
+  and `app/agents/registry.py` pick them up automatically. Built
+  specifically so Ghar Nepal, Paradise Nepal, and any future business can
+  be added later without touching the core.
+- `TolemateModule` (`app/connectors/tolemate/`): mock `TolemateConnector`
+  (clearly-labeled fictional provider data — no real API access
+  confirmed), 3 tools (`search_service_providers`,
+  `check_provider_availability`, `create_service_booking`), and
+  `ServiceBookingAgent` — the platform's first real business agent.
+- `tests/test_business_module_extensibility.py`: defines an entirely new,
+  fictional business (a Paradise Nepal-style crew lookup) **inside the
+  test itself**, registers it with the one-line API, and proves it's
+  immediately listed and runnable — the concrete, re-checked-on-every-run
+  guarantee behind "add multiple businesses later."
+- 13 new tests (62 → 75 total): Tolemate connector unit tests, full
+  search→check→book workflow via the API, honest error reporting for an
+  unavailable date, and cancellation reusing the Phase 5 approval flow.
+
+### Verified
+- `pytest -q` → 75 passed.
+- Live, real end-to-end against Qwen2.5 3B, two runs:
+  1. Asked it to find+book an electrician with all details given — it
+     found the right provider then asked for human confirmation instead
+     of booking immediately. Safe, not wrong, but revealed a real gap:
+     `/agents/run` has no multi-turn conversation continuation yet (noted
+     in `docs/DEVELOPMENT_ROADMAP.md`, not yet fixed).
+  2. Re-run with an explicit "don't ask, just do it" directive: the model
+     completed the full search→check→book chain, but partway through
+     **hallucinated a provider id** (`"P1"` instead of the real
+     `"PRV-001"` it had just been given), got genuine tool errors from
+     that, logged a `create_task` noting the failure, retried the search,
+     read the id correctly the second time, and completed the booking —
+     the final answer only claimed success once the tool had actually
+     confirmed the booking. The safety design (tool errors are real data
+     fed back, never silently papered over; success is never claimed
+     before the tool confirms it) held up under an actual model mistake,
+     not just a contrived test of it.
+
+### Scope notes
+- Notifications (Phase 9) and scheduled follow-up (Phase 10) remain
+  explicit stubs — not built here, as planned.
+- Ghar Nepal and Paradise Nepal are not built yet (Phase 7/8) — only the
+  plugin mechanism and one real example (Tolemate) exist so far.
+
 ## Phase 5 — Security + Approvals (2026-10-04)
 
 ### Added

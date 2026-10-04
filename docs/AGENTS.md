@@ -33,16 +33,32 @@ constraint on every future agent's system prompt, not a one-off prompt
 tweak: **small local models need explicit, mandatory tool-use instructions
 per fact category — "use tools when appropriate" is not reliable enough.**
 
-## Planned (Phase 3+)
+## Implemented (Phase 6): ServiceBookingAgent (Tolemate)
+`app/connectors/tolemate/agent.py` — the first real business agent,
+registered via the `BusinessModule` plugin system (see `docs/CONNECTORS.md`),
+not hand-wired into `agents/registry.py`. Composes business-specific tools
+(`search_service_providers`, `check_provider_availability`,
+`create_service_booking`) with core platform tools (`cancel_booking`,
+`search_knowledge_base`, `create_task`).
+
+Live-verified finding (see `docs/DEVELOPMENT_ROADMAP.md` Phase 6 for the
+full account): Qwen2.5 3B can misread a tool's own result text and
+hallucinate an id (e.g. `"P1"` instead of the real `"PRV-001"`) mid-run —
+it self-corrected via the normal error→retry path and never claimed
+success before the tool actually confirmed it, but this is a reminder that
+small local models need real end-to-end testing per agent, not just unit
+tests against a fake provider.
+
+## Planned (Phase 7+)
 ```
-backend/app/agents/
-├── base_agent.py          ✅
-├── general_assistant.py   ✅ (Phase 2 demo)
-├── customer_support_agent.py
-├── sales_agent.py
-├── property_agent.py
-├── service_booking_agent.py
+backend/app/connectors/
+├── tolemate/agent.py              ✅ ServiceBookingAgent
+├── ghar_nepal/agent.py            Phase 7
+├── paradise_nepal/agent.py        Phase 8
 └── ...
 ```
+Each new business agent follows the same recipe:
+`docs/CONNECTORS.md` → "Recipe for adding a real business."
 Permissions, escalation rules, and required-data declarations beyond
-`allowed_tools` are added as real business agents are built (Phase 6+).
+`allowed_tools` are added as each real business agent needs them — not
+built speculatively ahead of that need.

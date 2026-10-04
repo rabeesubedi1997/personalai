@@ -6,7 +6,9 @@ from app.agents.general_assistant import GeneralAssistantAgent
 
 @lru_cache
 def _agents() -> dict[str, BaseAgent]:
-    agents = [GeneralAssistantAgent()]
+    from app.connectors import all_business_agents
+
+    agents = [GeneralAssistantAgent(), *all_business_agents()]
     return {agent.name: agent for agent in agents}
 
 

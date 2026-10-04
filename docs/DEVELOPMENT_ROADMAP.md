@@ -134,9 +134,48 @@ one.
   rejected (409), and confirmed both the approval and its execution
   appear in the audit log.
 
-## Phase 6 — Tolemate (first real business integration)
-Mock connector first; service/provider search, availability, booking,
-notifications, follow-up.
+## Phase 6 — Tolemate (first real business integration) ✅ DONE (mock connector)
+- **`BusinessModule` plugin system** (`app/connectors/base.py` +
+  `registry.py`), built specifically so adding future businesses
+  (Ghar Nepal, Paradise Nepal, anything else) is a single
+  `register_business_module(...)` call — `app/tools/registry.py` and
+  `app/agents/registry.py` pick up a module's tools/agents automatically,
+  with zero other core-file changes required. Proven by
+  `tests/test_business_module_extensibility.py`, which registers an
+  entirely new fictional business from inside the test itself.
+- `TolemateModule`: mock `TolemateConnector` (clearly-labeled fictional
+  provider data — no real API access confirmed), 3 tools
+  (`search_service_providers`, `check_provider_availability`,
+  `create_service_booking`), and `ServiceBookingAgent` composing those with
+  core tools (`cancel_booking`, `search_knowledge_base`, `create_task`).
+- 13 new tests (62 → 75 total): connector unit tests, full search→check→book
+  workflow, honest error reporting on an unavailable date, and reuse of the
+  Phase 5 approval flow for cancellation.
+- Live-verified against real Qwen2.5 3B, two runs:
+  1. A cautious run where the model found a provider then asked for
+     confirmation rather than booking immediately — safe, not a bug, but
+     revealed each `/agents/run` call is currently a fresh single-turn
+     conversation with no continuation across calls (a real gap, noted
+     below, not a Phase 6 scope item).
+  2. A fully-directed run that completed the whole chain. **Caught and
+     worth recording honestly**: partway through, the model misread the
+     search result and hallucinated a provider id (`"P1"` instead of the
+     real `"PRV-001"`), got real tool errors from that, logged a
+     `create_task` noting the failure, retried the search, extracted the
+     correct id, and completed the booking successfully — and the final
+     answer only claimed success once the tool had actually confirmed it.
+     This is the safety architecture (error-as-data, never-claim-success)
+     working exactly as designed under a real model mistake, not a
+     hypothetical test of it.
+- **Not done, and intentionally out of scope for Phase 6**: notifications
+  (Phase 9) and scheduled/automated follow-up (Phase 10) remain stubs —
+  only the request→search→book→cancel-with-approval path was built.
+- **Known gap surfaced by the live test, not yet fixed**: no multi-turn
+  conversation continuation exists yet — each `/agents/run` call starts a
+  fresh context. A customer confirming "yes, book it" as a follow-up
+  message currently has nowhere to attach to the prior turn. Revisit when
+  building Request-linked conversations (Phase 3's `Request` model already
+  has the hook point; this needs an actual conversation-thread API).
 
 ## Phase 7 — Ghar Nepal
 Property search, enquiries, lead qualification, viewing workflow.

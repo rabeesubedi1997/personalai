@@ -151,9 +151,12 @@ class ToolRegistry:
 @lru_cache
 def get_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
+    from app.connectors import all_business_tools
     from app.tools.memory_tools import register_memory_tools
     from app.tools.mock_tools import register_mock_tools
 
     register_mock_tools(registry)
     register_memory_tools(registry)
+    for tool in all_business_tools():
+        registry.register(tool)
     return registry
