@@ -59,6 +59,38 @@ class SearchServiceProvidersTool(Tool):
         return ToolOutput(content=summary, data={"providers": results})
 
 
+class GetProviderScheduleTool(Tool):
+    name = "get_provider_schedule"
+    description = (
+        "Get a Tolemate provider's regular open days/hours (or, for a provider "
+        "with no regular schedule, their specific available dates) — call this "
+        "right after finding a provider so you can offer the customer real "
+        "options to choose from, instead of asking them to guess a date to check."
+    )
+    parameters: dict[str, Any] = {
+        "type": "object",
+        "properties": {"provider_id": {"type": "string"}},
+        "required": ["provider_id"],
+    }
+    permission_level = PermissionLevel.READ
+    timeout_seconds = 10.0
+
+    async def execute(self, context: ToolContext, provider_id: str, **kwargs: Any) -> ToolOutput:
+        connector = await get_connector(context.db, context.tenant_id)
+        try:
+            schedule = await connector.aget_schedule(provider_id)
+        except ProviderNotFoundError as exc:
+            raise ToolExecutionError(str(exc)) from exc
+
+        if schedule.get("open_days"):
+            content = "Regularly open: " + ", ".join(schedule["open_days"]) + "."
+        elif schedule.get("available_dates"):
+            content = "Available on: " + ", ".join(schedule["available_dates"]) + "."
+        else:
+            content = "No regular availability found for this provider."
+        return ToolOutput(content=content, data=schedule)
+
+
 class CheckProviderAvailabilityTool(Tool):
     name = "check_provider_availability"
     description = "Check whether a specific Tolemate provider is available on a given date."

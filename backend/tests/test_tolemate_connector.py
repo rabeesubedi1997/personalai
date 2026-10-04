@@ -43,3 +43,17 @@ def test_create_booking_rejects_unavailable_date():
     connector = TolemateConnector()
     with pytest.raises(ProviderUnavailableError):
         connector.create_booking("PRV-001", "2099-01-01", "Ram Shrestha")
+
+
+@pytest.mark.asyncio
+async def test_aget_schedule_returns_providers_available_dates():
+    connector = TolemateConnector()
+    schedule = await connector.aget_schedule("PRV-001")
+    assert schedule["available_dates"] == ["2026-10-10", "2026-10-11", "2026-10-14"]
+
+
+@pytest.mark.asyncio
+async def test_aget_schedule_unknown_provider_raises():
+    connector = TolemateConnector()
+    with pytest.raises(ProviderNotFoundError):
+        await connector.aget_schedule("NOPE")

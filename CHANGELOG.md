@@ -1,5 +1,47 @@
 # Changelog
 
+## Offer real schedule instead of asking the customer to guess a date (2026-10-04) — post-roadmap, by request
+
+### Why
+The user asked directly: why does the agent only answer "is date X free,
+yes/no" instead of showing the customer real available times and letting
+them pick? Looking at the code: `check_provider_availability` was built
+to mirror the mock connector's narrow interface (one date in, one bool
+out) — but the real connector was already fetching the provider's full
+weekly schedule from ToleMate's API to answer that single yes/no, and
+then throwing the rest of that schedule away. The richer data was always
+there; it just wasn't being surfaced.
+
+### Added
+- **`get_provider_schedule` tool** (`app/connectors/tolemate/tools.py`) —
+  new READ tool returning a provider's regular open days/hours in
+  human-readable form (e.g. "Regularly open: Monday 09:00-17:00, Tuesday
+  09:00-17:00, ..."). Backed by `RealTolemateConnector.aget_schedule()`
+  (refactored out of the existing availability-fetch code — no new API
+  call shape, just exposing what was already being fetched) and the
+  mock's equivalent `aget_schedule()` (returns its fixed list of
+  available dates, since the mock has no weekly-pattern concept).
+- Agent system prompt (`app/connectors/tolemate/agent.py`) now instructs:
+  after finding a provider, call `get_provider_schedule` and *offer* the
+  real times directly ("they're open Mon-Fri 9-5, which day works for
+  you?") instead of asking the customer to guess a date to check one at a
+  time. Also now asks for the customer's name and email up front
+  alongside their service/date preference, rather than discovering the
+  email requirement only after a failed booking attempt (the cause of
+  the redundant-retry loop flagged as a follow-up in the previous entry).
+- 4 new tests (195 total, up from 191).
+
+### Verified live
+Reproduced a full real conversation: "i need plumbing in kathmandu" →
+found two real providers and proactively asked for name/email up front;
+replying "Pipe Repair and Installation please, i am Ram Shrestha,
+ram@example.com" → the agent called `get_provider_schedule`, got
+ToleMate's real weekly hours back, and replied *"Pipe Repair and
+Installation by Quick Fix Plumbing (Kathmandu) is regularly open from
+Monday to Friday between 9 AM and 5 PM. Could you please choose a day
+that works for you?"* — exactly the flow requested, backed by real data
+end to end.
+
 ## Orchestrator retry for incomplete tool calls (2026-10-04) — post-roadmap, by request
 
 ### Why

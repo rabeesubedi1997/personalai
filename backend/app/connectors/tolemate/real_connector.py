@@ -69,6 +69,10 @@ _NEPAL_CITY_COORDS: dict[str, tuple[float, float]] = {
 }
 _DEFAULT_SEARCH_RADIUS_KM = 15.0
 
+# ToleMate's day_of_week is 0=Sunday..6=Saturday (confirmed via
+# VendorController::publicAvailability).
+_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
 # ToleMate's search is a literal substring match against each service's
 # name/description/tags (confirmed by reading ServiceController::search) —
 # it has no fuzzy or semantic matching. A customer (or the LLM on their
@@ -204,14 +208,31 @@ class RealTolemateConnector:
             "available_dates": [],  # real availability is a weekly schedule, not discrete dates — see acheck_availability
         }
 
-    async def acheck_availability(self, provider_id: str, date: str) -> bool:
-        vendor_id, _service_id = _decode_id(provider_id)
+    async def _fetch_weekly_schedule(self, vendor_id: int) -> list[dict]:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(f"{self._base_url}/api/vendors/{vendor_id}/availability")
             if resp.status_code == 404:
-                raise ProviderNotFoundError(f"No vendor found for provider id '{provider_id}'.")
+                raise ProviderNotFoundError(f"No vendor found for vendor id '{vendor_id}'.")
             resp.raise_for_status()
-            days = resp.json().get("availability", [])
+            return resp.json().get("availability", [])
+
+    async def aget_schedule(self, provider_id: str) -> dict:
+        """The provider's regular weekly open hours — meant to be offered
+        to the customer directly ("they're open Mon-Fri 9-5, which works
+        for you?") instead of making them guess a date to check one at a
+        time."""
+        vendor_id, _service_id = _decode_id(provider_id)
+        days = await self._fetch_weekly_schedule(vendor_id)
+        open_days = [
+            f"{_DAY_NAMES[d['day_of_week']]} {d.get('start_time', '')}-{d.get('end_time', '')}"
+            for d in sorted(days, key=lambda d: d.get("day_of_week", 0))
+            if d.get("is_available") and d.get("day_of_week") is not None
+        ]
+        return {"provider_id": provider_id, "open_days": open_days}
+
+    async def acheck_availability(self, provider_id: str, date: str) -> bool:
+        vendor_id, _service_id = _decode_id(provider_id)
+        days = await self._fetch_weekly_schedule(vendor_id)
 
         try:
             target = datetime.strptime(date, "%Y-%m-%d")

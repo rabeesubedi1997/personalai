@@ -156,6 +156,38 @@ async def test_search_with_unmapped_term_never_calls_categories(monkeypatch):
     assert not any(u.endswith("/api/categories") for u in calls)
 
 
+async def test_get_schedule_returns_readable_open_days(monkeypatch):
+    async def fake_get(self, url, params=None, **kwargs):
+        return _json_response(
+            200,
+            {
+                "availability": [
+                    {"day_of_week": 0, "start_time": "09:00", "end_time": "17:00", "is_available": False},
+                    {"day_of_week": 1, "start_time": "09:00", "end_time": "17:00", "is_available": True},
+                    {"day_of_week": 2, "start_time": "09:00", "end_time": "17:00", "is_available": True},
+                ]
+            },
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    connector = RealTolemateConnector("http://tolemate.test")
+    schedule = await connector.aget_schedule(_encode_id(2, 7))
+
+    assert schedule["open_days"] == ["Monday 09:00-17:00", "Tuesday 09:00-17:00"]
+
+
+async def test_get_schedule_vendor_not_found(monkeypatch):
+    async def fake_get(self, url, params=None, **kwargs):
+        return httpx.Response(404, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    connector = RealTolemateConnector("http://tolemate.test")
+    with pytest.raises(ProviderNotFoundError):
+        await connector.aget_schedule(_encode_id(999, 1))
+
+
 async def test_check_availability_maps_day_of_week(monkeypatch):
     async def fake_get(self, url, params=None, **kwargs):
         return _json_response(200, {"availability": [{"day_of_week": 1, "is_available": True}]})

@@ -85,6 +85,13 @@ class TolemateConnector:
     async def acheck_availability(self, provider_id: str, date: str) -> bool:
         return self.check_availability(provider_id, date)
 
+    async def aget_schedule(self, provider_id: str) -> dict:
+        # The mock has no weekly open-hours concept — just a fixed list of
+        # discrete dates it's "available" on — so that's what's offered
+        # here instead of the real connector's Mon-Fri-style open_days.
+        provider = self._get_provider(provider_id)
+        return {"provider_id": provider_id, "available_dates": provider["available_dates"]}
+
     async def acreate_booking(
         self,
         provider_id: str,
