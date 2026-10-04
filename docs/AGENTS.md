@@ -49,11 +49,27 @@ success before the tool actually confirmed it, but this is a reminder that
 small local models need real end-to-end testing per agent, not just unit
 tests against a fake provider.
 
-## Planned (Phase 7+)
+## Implemented (Phase 7): PropertyAgent (Ghar Nepal)
+`app/connectors/ghar_nepal/agent.py` — second real business agent, proving
+the composition pattern generalizes to a genuinely different domain (real
+estate vs. Tolemate's service bookings). Composes `search_properties`,
+`get_property_details`, `create_property_enquiry`,
+`create_viewing_request` with the same core tools as
+`ServiceBookingAgent`.
+
+Live-verified finding (minor, not a bug — see
+`docs/DEVELOPMENT_ROADMAP.md` Phase 7): the model narrated a successful,
+immediate `SAFE_WRITE` viewing-request creation as "pending human review,"
+language that only actually applies to the `SENSITIVE` `cancel_booking`
+tool. The fact reported (a real viewing was created, with its real id) was
+accurate; only the process description was imprecise. Worth tightening
+`PropertyAgent`'s system prompt if it recurs, not worth a structural fix.
+
+## Planned (Phase 8+)
 ```
 backend/app/connectors/
-├── tolemate/agent.py              ✅ ServiceBookingAgent
-├── ghar_nepal/agent.py            Phase 7
+├── tolemate/agent.py              ✅ ServiceBookingAgent (Phase 6)
+├── ghar_nepal/agent.py            ✅ PropertyAgent (Phase 7)
 ├── paradise_nepal/agent.py        Phase 8
 └── ...
 ```

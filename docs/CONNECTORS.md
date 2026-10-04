@@ -1,27 +1,41 @@
 # Business Connectors
 
-## Implemented (Phase 6): Tolemate (mock)
+## Implemented: Tolemate (Phase 6) + Ghar Nepal (Phase 7), both mock
 ```
 backend/app/connectors/
 ├── base.py              # BusinessModule plugin interface
 ├── registry.py           # register_business_module() + the lists tool/agent registries read from
-└── tolemate/
-    ├── connector.py       # TolemateConnector — mock data, real method signatures
-    ├── mock_data.py       # clearly-labeled fictional providers
-    ├── tools.py           # search_service_providers, check_provider_availability, create_service_booking
-    ├── agent.py           # ServiceBookingAgent
-    └── module.py          # TolemateModule(BusinessModule) — wires the above together
+├── tolemate/
+│   ├── connector.py       # TolemateConnector — mock data, real method signatures
+│   ├── mock_data.py       # clearly-labeled fictional providers
+│   ├── tools.py           # search_service_providers, check_provider_availability, create_service_booking
+│   ├── agent.py           # ServiceBookingAgent
+│   └── module.py          # TolemateModule(BusinessModule)
+└── ghar_nepal/
+    ├── connector.py       # GharNepalConnector — mock data, real method signatures
+    ├── mock_data.py       # clearly-labeled fictional property listings
+    ├── tools.py           # search_properties, get_property_details, create_property_enquiry, create_viewing_request
+    ├── agent.py           # PropertyAgent
+    └── module.py          # GharNepalModule(BusinessModule)
 ```
-No real Tolemate API access has been confirmed, so `TolemateConnector`
-returns fixed mock data in the same shape a real integration would —
+No real API access has been confirmed for either business, so both
+connectors return fixed mock data in the shape a real integration would —
 nothing invented about real endpoints, credentials, or business rules.
-Swapping in the real API later means rewriting only `connector.py`'s
-method bodies; `tools.py`, `agent.py`, and the entire core stay unchanged.
+Swapping in a real API later means rewriting only that connector's method
+bodies; its tools, agent, and the entire core stay unchanged.
 
-Ghar Nepal and Paradise Nepal are not built yet (Phase 7/8) — existing
-applications (gharnepal.kitetool.com, tolemate.kitetool.com,
-paradisenepal.kitetool.com) stay independent either way; connectors call
-their controlled APIs rather than merging databases or rewriting them.
+Ghar Nepal mattered as a test of the pattern, not just a second business:
+it's a genuinely different domain (real estate vs. service bookings), and
+it was added with the exact same one-line registration, zero other core
+file changes, and the full pre-existing test suite passing unchanged
+before any Ghar Nepal-specific test was written. See
+`docs/DEVELOPMENT_ROADMAP.md` Phase 7 for the live verification, including
+cross-business conversation continuity.
+
+Paradise Nepal is not built yet (Phase 8) — existing applications
+(gharnepal.kitetool.com, tolemate.kitetool.com, paradisenepal.kitetool.com)
+stay independent either way; connectors call their controlled APIs rather
+than merging databases or rewriting them.
 
 ## The plugin mechanism (how "add a business" actually works)
 

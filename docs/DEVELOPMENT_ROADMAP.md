@@ -205,8 +205,38 @@ one.
   without re-searching. Also verified a conversation paused on
   `awaiting_approval` continues without error on the next real API call.
 
-## Phase 7 — Ghar Nepal
-Property search, enquiries, lead qualification, viewing workflow.
+## Phase 7 — Ghar Nepal ✅ DONE (mock connector)
+Second real instance of the Phase 6 `BusinessModule` plugin pattern —
+confirming it generalizes beyond Tolemate's shape, not just working once
+by coincidence.
+- `GharNepalModule` (`app/connectors/ghar_nepal/`): mock `GharNepalConnector`
+  (clearly-labeled fictional listings), 4 tools (`search_properties`,
+  `get_property_details`, `create_property_enquiry`,
+  `create_viewing_request`), and `PropertyAgent` — composing those with
+  the same core tools (`cancel_booking`, `search_knowledge_base`,
+  `create_task`) Tolemate's agent uses.
+- Registered with the same one line
+  (`register_business_module(GharNepalModule())`) proven in Phase 6 — zero
+  other core files touched, re-confirmed by the full existing suite
+  passing unchanged before any Ghar Nepal-specific tests were added.
+- 11 new tests (80 → 91 total): connector unit tests, full
+  search→enquiry workflow, honest error reporting for a sold property, and
+  viewing cancellation reusing the Phase 5 approval flow.
+- Live-verified against real Qwen2.5 3B across a 2-turn conversation:
+  turn 1 searched and found the right property with all filters applied
+  (location, budget, bedrooms); turn 2 ("request a viewing for that one"),
+  using the `conversation_id` from turn 1, correctly remembered the
+  property id and created the viewing request — confirming conversation
+  continuity (the Phase 6 follow-up fix) works for a second, differently-shaped
+  business too, not just Tolemate.
+- **Minor finding, not a bug**: the model described the viewing request as
+  "pending human review" even though `create_viewing_request` is
+  `SAFE_WRITE` and executed immediately (unlike `cancel_booking`, which
+  really does pend approval). The fact reported (a viewing request was
+  created, with the real id) was accurate — only the process narration was
+  imprecise. Noted here rather than silently ignored; not something to
+  architect around, since it's natural-language flavor text, not a false
+  claim about what happened or a security-relevant error.
 
 ## Phase 8 — Paradise Nepal
 Production enquiries, locations, crew, equipment, estimation.

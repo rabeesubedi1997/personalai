@@ -1,5 +1,38 @@
 # Changelog
 
+## Phase 7 — Ghar Nepal (2026-10-04)
+
+### Added
+- `GharNepalModule` (`app/connectors/ghar_nepal/`): mock
+  `GharNepalConnector` (clearly-labeled fictional property listings), 4
+  tools (`search_properties`, `get_property_details`,
+  `create_property_enquiry`, `create_viewing_request`), and `PropertyAgent`.
+- Registered with the exact one-line pattern from Phase 6
+  (`register_business_module(GharNepalModule())`) — no other core file
+  touched, confirmed by the full pre-Ghar-Nepal test suite (80 tests)
+  passing unchanged before any Ghar Nepal test was written.
+- 11 new tests (80 → 91 total): connector unit tests, full search→enquiry
+  workflow via the API, honest error reporting for a sold property, and
+  viewing cancellation reusing the Phase 5 approval flow.
+
+### Verified
+- `pytest -q` → 91 passed.
+- Live, real end-to-end against Qwen2.5 3B, a 2-turn conversation: turn 1
+  searched with location/budget/bedroom filters and found the correct
+  property; turn 2 ("request a viewing for that one"), using the
+  `conversation_id` from turn 1, correctly remembered the property id and
+  created the viewing request — confirming the Phase 6 follow-up's
+  conversation continuity fix generalizes to a second, differently-shaped
+  business, not just the one it was built against.
+
+### Minor finding, documented not hidden
+The model described a successful, immediate `SAFE_WRITE` viewing-request
+creation as "pending human review" — language that only actually applies
+to the `SENSITIVE` `cancel_booking` tool. The underlying fact (a real
+viewing was created, correct id) was accurate; only the narration was
+imprecise. Not a safety issue or a false claim about what happened; noted
+for a future prompt tightening pass, not treated as a structural bug.
+
 ## Phase 6 follow-up — multi-turn conversation continuity (2026-10-04)
 
 Fixed same day, before moving to Phase 7, by explicit request ("fix for
