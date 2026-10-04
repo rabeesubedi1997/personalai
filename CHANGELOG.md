@@ -1,5 +1,42 @@
 # Changelog
 
+## Orchestrator retry for incomplete tool calls (2026-10-04) — post-roadmap, by request
+
+### Why
+The stop-sequence fix (previous entry) stopped the model from
+hallucinating a fake continuation of the conversation, but a narrower
+version of the same bug remained: the model would narrate an intended
+tool call ("Let me check... Please wait while I initiate this check.")
+and then emit a bare, unparsed `<tool_call>` tag that never resolved into
+a real structured call — and the orchestrator was treating that as the
+model's final answer, showing the customer a promise that was never kept.
+
+### Fixed
+`app/orchestrator/engine.py`: when a turn produces no structured
+`tool_calls` AND the content contains the literal `<tool_call>` marker,
+that's not a final answer — it's a failed attempt. The orchestrator now
+discards it (never shown to the customer, never added to history, so it
+can't reinforce the bad pattern) and retries with a corrective system
+message ("you announced a tool call but never made one — call it now"),
+consuming one iteration out of the existing hard budget rather than a new
+unbounded one. If the model never recovers, `MAX_ITERATIONS_REACHED` is
+returned honestly rather than ever showing the broken text.
+
+A `stop: ["<tool_call>"]` sequence was considered first and rejected —
+Qwen's own chat template renders that exact tag as part of how Ollama
+recognizes a REAL structured tool call, so stopping there breaks
+tool-calling entirely (confirmed empty responses in testing). The retry
+approach handles it without touching generation at all.
+
+### Verified live
+Reproduced the user's exact reported scenario (checking a real plumber's
+availability) twice: one run completed a full real 6-step conversation
+(checked availability, correctly rejected a booking attempt missing an
+email, logged a follow-up task, ended with an honest request for the
+missing email) with zero garbled output; a second hit the iteration cap
+after redundant tool calls but still ended honestly, never fabricating
+success or showing broken tags. `pytest -q` → **191 passed** (189 → 191).
+
 ## Tool-call reliability fixes + category-aware search fallback (2026-10-04) — post-roadmap, by request
 
 ### Why

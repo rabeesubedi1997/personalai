@@ -61,6 +61,21 @@ _ANTI_NARRATION_PREAMBLE = (
     "simulate what the user might say next — only the real user does that."
 )
 
+# A stop sequence can't safely catch this one (see OllamaProvider — Qwen's
+# own chat template legitimately renders this same tag while building a
+# REAL structured tool call, so stopping generation there breaks
+# tool-calling entirely). So instead: when the model narrates an intended
+# tool call and then emits a bare, unparsed "<tool_call>" as plain content
+# rather than a real structured call, that's a promise to the customer
+# ("let me check...") that will never be kept if treated as the final
+# answer. Caught below and retried with a corrective nudge instead of
+# being shown to the customer as a dead end.
+_INCOMPLETE_TOOL_CALL_MARKER = "<tool_call>"
+
+
+def _looks_like_incomplete_tool_call(content: str) -> bool:
+    return _INCOMPLETE_TOOL_CALL_MARKER in content
+
 
 @dataclass
 class OrchestratorResult:
@@ -122,6 +137,28 @@ class AgentOrchestrator:
             model_name = result.model or model_name
 
             if not result.tool_calls:
+                if _looks_like_incomplete_tool_call(result.content):
+                    # Don't show the customer a promise ("let me check...")
+                    # that was never actually kept, and don't let the
+                    # broken attempt itself pollute the conversation history
+                    # — just nudge and retry, consuming one iteration out
+                    # of the existing hard budget rather than a new one.
+                    logger.warning(
+                        "orchestrator_incomplete_tool_call_retry",
+                        agent=agent.name,
+                        iteration=iteration,
+                    )
+                    messages.append(
+                        ChatMessage(
+                            role="system",
+                            content=(
+                                "Your last reply announced a tool call but never actually "
+                                "made one. Call the tool now through the function-calling "
+                                "mechanism — do not describe it in text."
+                            ),
+                        )
+                    )
+                    continue
                 # Model produced a final answer — done.
                 messages.append(ChatMessage(role="assistant", content=result.content))
                 return OrchestratorResult(

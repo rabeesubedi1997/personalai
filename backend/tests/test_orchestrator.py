@@ -32,6 +32,47 @@ async def test_completes_without_any_tool_calls(context):
     assert result.tool_trace == []
 
 
+async def test_retries_instead_of_returning_an_incomplete_tool_call_as_final(context):
+    # Seen live: a small local model sometimes narrates an intended tool
+    # call ("let me check...") and then emits a bare, unparsed
+    # "<tool_call>" tag as plain content instead of a real structured call
+    # — a promise to the customer that nothing ever fulfills if treated as
+    # the final answer. The orchestrator must retry instead of returning it.
+    provider = FakeAIProvider(
+        [
+            GenerationResult(
+                content="Let me check that for you.\n<tool_call>", model="fake"
+            ),
+            GenerationResult(content="It is currently ... (used the tool)", model="fake"),
+        ]
+    )
+    orchestrator = AgentOrchestrator(provider, get_tool_registry())
+    result = await orchestrator.run(GeneralAssistantAgent(), "what time is it?", context)
+
+    assert result.status == AgentRunStatus.COMPLETED
+    assert result.final_response == "It is currently ... (used the tool)"
+    assert result.iterations == 2
+    # The broken attempt's own text must never reach the customer, not even
+    # history (the system preamble itself legitimately mentions the
+    # "<tool_call>" tag as an example of what not to write, so check for
+    # the model's actual garbled sentence instead of that bare substring).
+    assert "Let me check that for you" not in str(provider.received_messages[-1])
+
+
+async def test_gives_up_honestly_if_model_never_recovers_from_incomplete_tool_calls(context):
+    provider = FakeAIProvider(
+        [GenerationResult(content="Let me check.\n<tool_call>", model="fake")]
+    )
+    orchestrator = AgentOrchestrator(provider, get_tool_registry())
+    result = await orchestrator.run(GeneralAssistantAgent(), "what time is it?", context)
+
+    # FakeAIProvider repeats its last response forever, so this never
+    # recovers — the orchestrator must report that honestly rather than
+    # ever returning the broken text as a completed answer.
+    assert result.status == AgentRunStatus.MAX_ITERATIONS_REACHED
+    assert result.iterations == settings.agent_max_iterations
+
+
 async def test_executes_allowed_tool_then_completes(context):
     provider = FakeAIProvider(
         [
