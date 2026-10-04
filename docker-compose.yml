@@ -1,0 +1,74 @@
+# Docker Compose definitions for PersonalOps AI.
+#
+# NOTE for local Windows development (see ENVIRONMENT_REPORT.md): on a
+# 16GB-RAM dev machine with no free RAM to spare for a WSL2/Docker Desktop
+# VM, the recommended local setup is NATIVE services (see
+# docs/DEVELOPMENT_ROADMAP.md "Native local setup") — this file exists for:
+#   1. Linux/production parity (spec Section 34) and
+#   2. an optional all-in-one path once more RAM is free or when running on
+#      a proper Linux server.
+#
+# Resource limits are set deliberately low/conservative for a small dev box.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: personalops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/personalops
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://ollama:11434
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+      - ollama
+
+  frontend:
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  ollama_data:
