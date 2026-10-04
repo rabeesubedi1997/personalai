@@ -1,5 +1,35 @@
 # Changelog
 
+## Phase 3 — Universal Request Engine (2026-10-04)
+
+### Added
+- `Request` model + `RequestStatus` lifecycle enum, open-ended
+  `request_type`, free-form `customer`/`requirements`/`result` JSON,
+  in-row `status_history` audit trail.
+- `RequestEngine` (`app/services/request_engine.py`) — sole authority on
+  status transitions; enforces the spec's lifecycle graph, raises
+  `InvalidTransitionError` on an illegal jump.
+- `POST/GET /api/v1/requests`, `GET /api/v1/requests/{id}`,
+  `PATCH /api/v1/requests/{id}/status` — tenant-scoped (a request outside
+  the caller's tenant 404s, never 403, so existence never leaks).
+- 12 new tests (23 → 35 total).
+
+### Verified
+- `pytest -q` → 35 passed.
+- Live smoke test: created a request, transitioned RECEIVED→UNDERSTANDING
+  (200, history recorded), then attempted UNDERSTANDING→COMPLETED directly
+  (correctly rejected, 409).
+
+### Caught and fixed during test-writing (reported honestly)
+`test_tenant_cannot_access_another_tenants_request` failed on first run.
+Root cause was **not** a tenant-isolation bug in the new request code — it
+was the Phase 1 dev `/auth/bootstrap` endpoint hard-coding `slug="dev"` for
+every tenant it created, so bootstrapping a second user (needed to get a
+second tenant for the isolation test) crashed on a unique-constraint
+violation before isolation logic ever ran. Fixed by generating a unique
+slug per bootstrap call (`dev-<random-hex>`). This is exactly the kind of
+thing a real cross-tenant test is for, even this early.
+
 ## Phase 2 — AI Core (2026-10-04)
 
 ### Added

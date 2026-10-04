@@ -55,7 +55,11 @@ async def bootstrap_dev_user(
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists")
 
-    tenant = Tenant(name="Dev Tenant", slug="dev")
+    # Unique slug per bootstrap call — each dev user gets its own tenant.
+    # A fixed slug ("dev") would collide the moment a second user bootstraps,
+    # which is exactly the multi-tenant scenario this platform must support.
+    slug = f"dev-{uuid.uuid4().hex[:12]}"
+    tenant = Tenant(name=f"Dev Tenant ({body.email})", slug=slug)
     db.add(tenant)
     await db.flush()
 

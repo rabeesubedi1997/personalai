@@ -44,9 +44,32 @@ infrastructure verification, not Phase 2's orchestrator.
   category in the system prompt (see `docs/AGENTS.md` for the full
   before/after). This is now a standing rule for every future agent prompt.
 
-## Phase 3 — Universal Request Engine
-Generic `Request` lifecycle (RECEIVED → ... → COMPLETED/CANCELLED/FAILED/
-ESCALATED), not hard-coded to any one business.
+## Phase 3 — Universal Request Engine ✅ DONE
+- `Request` model: open-ended `request_type` (no enum/schema change needed
+  per new business), free-form `customer`/`requirements`/`result` JSON,
+  in-row `status_history` audit trail.
+- `RequestEngine` state machine (`app/services/request_engine.py`) — the
+  sole writer of `request.status`; enforces the spec's lifecycle graph
+  (RECEIVED → UNDERSTANDING ⇄ NEEDS_INFORMATION → VALIDATING → SEARCHING →
+  MATCHING → WAITING_FOR_CONFIRMATION → EXECUTING → VERIFYING → COMPLETED,
+  with CANCELLED/FAILED/ESCALATED reachable as terminal states from
+  anywhere non-terminal); illegal jumps raise `InvalidTransitionError`.
+- `POST/GET /api/v1/requests`, `GET /api/v1/requests/{id}`,
+  `PATCH /api/v1/requests/{id}/status` — all tenant-scoped.
+- 12 new tests (23 → 35 total): state machine unit tests (happy path,
+  rejected skip-ahead, terminal-state lockout, info-gathering loop-back)
+  and API tests (CRUD, filtering, invalid-transition 409, and — the
+  important one — cross-tenant access denial).
+
+### Bug caught and fixed by the tenant-isolation test
+`test_tenant_cannot_access_another_tenants_request` failed on first run —
+not because isolation logic was broken, but because the Phase 1 dev
+`/auth/bootstrap` endpoint hard-coded `slug="dev"` for every new tenant, so
+creating a second dev user crashed on a unique constraint before isolation
+was even exercised. Fixed by generating a unique slug per bootstrap call.
+Kept in the record as a concrete example of why this test needs to exist
+even with one developer — it caught a real latent bug, not a theoretical
+one.
 
 ## Phase 4 — Memory
 Conversation / customer / business / agent memory + pgvector-backed

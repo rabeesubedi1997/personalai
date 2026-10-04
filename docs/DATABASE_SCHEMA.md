@@ -50,9 +50,38 @@ DB-registered yet — a `tools`/`agents` metadata table is deferred until
 there's a real need to configure them without a deploy (e.g. the Phase 12
 marketplace).
 
+## `requests` (Phase 3)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID | indexed (TenantScopedMixin) |
+| request_type | string | open-ended (`service_booking`, `property_search`, ...) — not an enum, so a new business never needs a schema change |
+| status | enum | see lifecycle below, indexed |
+| assigned_agent | string, nullable | |
+| customer | JSON | free-form, e.g. `{"name": "John", "location": "Lalitpur"}` |
+| requirements | JSON | free-form, business-specific |
+| result | JSON, nullable | final outcome data once completed |
+| error | text, nullable | |
+| status_history | JSON | ordered list of `{from, to, note, at}` — lightweight in-row audit trail |
+| created_at / updated_at | timestamptz | |
+
+### Lifecycle (spec Section 13)
+```
+RECEIVED → UNDERSTANDING ⇄ NEEDS_INFORMATION → VALIDATING → SEARCHING
+  → MATCHING → WAITING_FOR_CONFIRMATION → EXECUTING → VERIFYING → COMPLETED
+```
+Any non-terminal state can also move to `CANCELLED`, `FAILED`, or
+`ESCALATED` (all terminal). All of this is enforced by
+`app/services/request_engine.py::RequestEngine` — the only code path
+allowed to write `request.status`; invalid jumps (e.g. `RECEIVED` straight
+to `COMPLETED`) raise `InvalidTransitionError` (→ HTTP 409), and nothing
+about this is business-specific — a Tolemate booking and a Ghar Nepal
+enquiry use the exact same state machine.
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 5
-- `requests`, `workflows`, `workflow_steps` — Phase 3
+- `workflows`, `workflow_steps` (if the Request/status_history model proves
+  insufficient for multi-step business workflows) — reassessed before Phase 6
 - `conversations`, `messages`, `memories` — Phase 4
 - `approvals` — Phase 5
 - `notifications` — Phase 9

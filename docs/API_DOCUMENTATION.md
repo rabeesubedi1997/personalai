@@ -49,6 +49,18 @@ whole app down.
   `escalated` — the orchestrator never reports `completed` for a run that
   was actually cut off by a limit or failed. 404s for an unknown `agent`.
 
+## Requests — Universal Request Engine (Phase 3)
+All endpoints require a Bearer token and are strictly tenant-scoped: a
+request belonging to another tenant 404s exactly like one that doesn't
+exist (never a 403 that would confirm it exists).
+
+- `POST /api/v1/requests` — `{ request_type, customer?, requirements?, assigned_agent? }` → 201, status starts at `received`.
+- `GET /api/v1/requests` — optional `?status=` / `?request_type=` filters, newest first.
+- `GET /api/v1/requests/{id}`
+- `PATCH /api/v1/requests/{id}/status` — `{ status, note? }`. Validated
+  against the lifecycle state machine (`docs/DATABASE_SCHEMA.md`); an
+  illegal jump returns **409**, not 200 — the engine never silently accepts
+  an invalid state change.
+
 ## Planned endpoints (future phases)
-- `POST /api/v1/requests`, `GET /api/v1/requests/{id}` — Phase 3
 - `POST /api/v1/approvals/{id}/approve|reject` — Phase 5
