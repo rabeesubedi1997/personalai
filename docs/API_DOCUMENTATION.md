@@ -62,5 +62,13 @@ exist (never a 403 that would confirm it exists).
   illegal jump returns **409**, not 200 — the engine never silently accepts
   an invalid state change.
 
+## Memory (Phase 4)
+All tenant-scoped, Bearer token required.
+- `POST /api/v1/memory` — `{ memory_type, content, subject_id?, metadata? }` → 201. Embeds `content` via the configured AI provider's `embed()` and stores the vector alongside it.
+- `GET /api/v1/memory` — optional `?memory_type=` / `?subject_id=` filters.
+- `POST /api/v1/memory/search` — `{ query, memory_type?, top_k? }` → ranked
+  `[{ memory, score }]` by cosine similarity against the query's embedding.
+  A tenant with no matching memories gets `[]`, never another tenant's data.
+
 ## Planned endpoints (future phases)
 - `POST /api/v1/approvals/{id}/approve|reject` — Phase 5

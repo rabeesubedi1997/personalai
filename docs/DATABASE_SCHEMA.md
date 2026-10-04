@@ -78,6 +78,28 @@ to `COMPLETED`) raise `InvalidTransitionError` (→ HTTP 409), and nothing
 about this is business-specific — a Tolemate booking and a Ghar Nepal
 enquiry use the exact same state machine.
 
+## `memory_records` (Phase 4)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID | indexed (TenantScopedMixin) |
+| memory_type | enum | `conversation` / `customer` / `business` / `agent` / `knowledge` |
+| subject_id | string, nullable, indexed | e.g. a customer id or conversation id; null for business-wide/knowledge entries |
+| content | text | |
+| record_metadata | JSON | free-form |
+| embedding | JSON (list of floats) | **see storage note below** |
+| created_at / updated_at | timestamptz | |
+
+**Storage note / documented assumption:** `embedding` is plain JSON, not a
+native vector type, because Phase 1–4's default `DATABASE_URL` is SQLite
+(no vector extension). `MemoryStore.search()` (`app/memory/store.py`) does
+brute-force cosine similarity in Python over tenant-scoped rows — fine at
+dev/demo record counts, **not** what should run in production. Once
+`DATABASE_URL` points at PostgreSQL, migrate this column to pgvector's
+`Vector` type and switch the search query to its indexed `<->` operator
+instead of loading every row into Python. This is called out explicitly
+rather than left to be discovered later.
+
 ## Planned, not yet created (future phases)
 - `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 5
 - `workflows`, `workflow_steps` (if the Request/status_history model proves

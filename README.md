@@ -22,10 +22,11 @@ decision (native services over Docker, model size, etc).
 ### Prerequisites already verified on this machine
 - Python 3.11, Git, Node.js 24 / npm 9, Ollama — see ENVIRONMENT_REPORT.md.
 
-### 1. Pull the model and start Ollama
+### 1. Pull the models and start Ollama
 ```powershell
 ollama serve          # if not already running
 ollama pull qwen2.5:3b-instruct
+ollama pull nomic-embed-text   # for the Phase 4 memory/embedding system
 ```
 
 ### 2. Backend

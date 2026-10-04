@@ -130,3 +130,13 @@ class OllamaProvider(AIProvider):
                 return response.status_code == 200
         except httpx.HTTPError:
             return False
+
+    async def embed(self, text: str) -> list[float]:
+        data = await self._post(
+            "/api/embeddings",
+            {"model": settings.ollama_embedding_model, "prompt": text},
+        )
+        embedding = data.get("embedding")
+        if not embedding:
+            raise AIProviderError("Ollama returned no embedding for the given text.")
+        return embedding

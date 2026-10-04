@@ -9,7 +9,7 @@ import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
 from app.db.base import Base
-from app.db.session import engine
+from app.db.session import async_session_factory, engine
 from app.main import app
 
 
@@ -20,6 +20,18 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest_asyncio.fixture
+async def db_session():
+    """Raw async DB session for tests that exercise a service layer
+    directly (e.g. MemoryStore) without going through the HTTP API."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with async_session_factory() as session:
+        yield session
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 

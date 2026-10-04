@@ -1,5 +1,44 @@
 # Changelog
 
+## Phase 4 — Memory (2026-10-04)
+
+### Added
+- `AIProvider.embed(text) -> list[float]` added to the provider interface
+  (new abstract method); `OllamaProvider` implements it via a separate
+  lightweight embedding model (`nomic-embed-text`, ~274MB), configurable via
+  `OLLAMA_EMBEDDING_MODEL`.
+- `MemoryRecord` model: one table for all 5 memory kinds (conversation,
+  customer, business, agent, knowledge), tenant-scoped, with JSON
+  `embedding` storage (see storage note below).
+- `MemoryStore` service (`app/memory/store.py`): `add()` (embeds + persists),
+  `list()` (filtered by type/subject), `search()` (cosine similarity
+  ranking), all tenant-scoped.
+- `POST/GET /api/v1/memory`, `POST /api/v1/memory/search`.
+- 8 new tests (35 → 43 total): store-level ranking correctness (with a
+  deterministic keyword-based fake embedding) and tenant isolation, plus
+  API-level equivalents.
+
+### Verified
+- `pytest -q` → 43 passed.
+- Live, real end-to-end: added 3 knowledge entries via the actual Ollama
+  `nomic-embed-text` model, searched "Is there an electrician available in
+  Lalitpur?" — correctly ranked the electrician document highest
+  (score 0.85) over the plumbing document (0.62), excluding the unrelated
+  refund-policy document entirely. ~0.36s per search including the
+  embedding call — embeddings are far cheaper than generation, as expected.
+
+### Documented, not deferred silently (spec Section 51)
+- Runs on SQLite with embeddings as JSON and brute-force Python cosine
+  similarity — correct and fully tested, but not how this should run at
+  scale. The PostgreSQL + pgvector migration (native `Vector` column,
+  indexed `<->` search) is fully specified in `docs/DATABASE_SCHEMA.md` but
+  not implemented, since native Postgres isn't installed on this machine
+  yet (still blocked on the elevated-shell install noted since Phase 0/1).
+- Memory is not yet wired into any agent's tools — `general_assistant`
+  still uses its Phase 2 hard-coded mock knowledge base unchanged, so as
+  not to disturb already-tested behavior. A real memory-backed knowledge
+  tool is deferred to Phase 6+ when a real business agent needs it.
+
 ## Phase 3 — Universal Request Engine (2026-10-04)
 
 ### Added

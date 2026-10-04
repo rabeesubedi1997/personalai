@@ -88,3 +88,10 @@ class AIProvider(ABC):
     @abstractmethod
     async def health_check(self) -> bool:
         """Cheap reachability check used by /health."""
+
+    @abstractmethod
+    async def embed(self, text: str) -> list[float]:
+        """Return an embedding vector for `text`, used by the memory system
+        (app.memory.store) for similarity search. Implementations should
+        use a small, fast embedding model — this is called on every memory
+        write and every search query, not just occasionally."""
