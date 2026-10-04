@@ -49,6 +49,28 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5:3b-instruct"
     ollama_embedding_model: str = "nomic-embed-text"
     ollama_request_timeout_seconds: float = 120.0
+    # How long Ollama keeps the model resident with no requests. Below the
+    # default 5m, a quiet gap (e.g. overnight) forces a full reload on top
+    # of the cold prompt-eval cost of the next visitor's first message.
+    ollama_keep_alive: str = "30m"
+    # Bounds worst-case generation time per call — CPU inference is ~5-8
+    # tok/s here, so an unbounded reply can add tens of seconds for no
+    # benefit (customers don't need a 500-word answer to "is it available
+    # Tuesday?"). Does not affect typical short replies.
+    ollama_num_predict: int = 350
+
+    # --- Prompt cache warmer (see app/services/ai/cache_warmer.py) ---
+    # Ollama's prompt/KV cache for a given model holds only the most
+    # recently processed prompt; the instant a different system+tools
+    # prefix is processed (a different agent, or any other Ollama traffic),
+    # the next request against this agent pays a full cold prompt-eval
+    # again (measured ~20-25s for Tolemate's prompt on this CPU, vs ~0.2s
+    # warm). Re-pinging the last-used agent's exact prefix during idle
+    # gaps keeps it warm so a visitor's first message doesn't pay that
+    # tax. Harmless no-op if disabled; never competes with a real request
+    # (see cache_warmer.py for how it avoids overlapping with live calls).
+    cache_warmer_enabled: bool = True
+    cache_warmer_interval_seconds: float = 60.0
 
     # Reserved for future providers — unused by OllamaProvider.
     anthropic_api_key: str | None = None

@@ -1,5 +1,5 @@
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +11,10 @@ from app.core.public_cors import PublicCorsMiddleware
 from app.db.base import Base
 from app.db.session import async_session_factory, engine
 from app.scheduler.engine import get_scheduler
+from app.services.ai import cache_warmer
+from app.services.ai.factory import get_ai_provider
 from app.services.billing import seed_default_plans
+from app.tools.registry import get_tool_registry
 
 configure_logging()
 logger = get_logger(__name__)
@@ -36,17 +39,30 @@ async def lifespan(app: FastAPI):
             scheduler.run_forever(settings.scheduler_interval_seconds)
         )
 
+    warmer_task: asyncio.Task | None = None
+    if settings.cache_warmer_enabled and settings.ai_provider == "ollama":
+        warmer_task = asyncio.create_task(
+            cache_warmer.run_forever(
+                get_ai_provider(), get_tool_registry(), settings.cache_warmer_interval_seconds
+            )
+        )
+
     logger.info(
         "app_startup",
         app_env=settings.app_env,
         ai_provider=settings.ai_provider,
         scheduler_enabled=settings.scheduler_enabled,
+        cache_warmer_enabled=settings.cache_warmer_enabled,
     )
     yield
 
     if scheduler_task is not None:
         get_scheduler().stop()
         await scheduler_task
+    if warmer_task is not None:
+        warmer_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await warmer_task
     logger.info("app_shutdown")
 
 

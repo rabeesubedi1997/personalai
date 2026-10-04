@@ -1,5 +1,61 @@
 # Changelog
 
+## Fix the real cause of slow responses: Ollama prompt-cache eviction (2026-10-04) — post-roadmap, by request
+
+### Why
+User report (again, after the previous round-trip fix): "give the asap
+response, the current response is too slow... instant response i am
+expecting." The previous fix cut round-trips but didn't explain why even a
+single-tool-call turn could still take 20-90s+. Measured it directly
+instead of guessing further:
+
+- Ollama holds a KV/prompt cache for only the *most recently processed*
+  prompt per model. As long as nothing else calls Ollama in between, a
+  conversation's growing message list stays cheap to re-process (confirmed:
+  0.14-1.7s for incremental turns). But the instant a *different* prompt is
+  processed — a different agent, a different tenant, even an unrelated
+  health check — the cache is evicted, and the next request pays full
+  cold prompt-eval again.
+- Measured on this CPU: Tolemate's ~700-token system+tools prefix costs
+  ~20-25s to re-process cold, vs ~0.2-0.4s warm. That's the dominant cost
+  in a slow turn, not generation speed.
+- Raising `OLLAMA_NUM_PARALLEL` (tried first, as a plausible fix for
+  cross-agent thrashing) did **not** help for sequential, non-concurrent
+  requests — confirmed by a live A/B/C re-test showing the same ~20-25s
+  cold cost after switching agents and back, even with 4 parallel slots.
+  Reverted that assumption rather than keeping an ineffective change
+  unexplained.
+- Confirmed instead that re-processing an agent's exact prefix (even with
+  throwaway trailing text) keeps it warm for the *next, different* real
+  message — the shared prefix is what gets cached; only the small novel
+  suffix needs fresh evaluation.
+
+### What changed
+- `OllamaProvider`: explicit `keep_alive: "30m"` on every call (previously
+  unset, relying on Ollama's 5-minute default — a quiet gap longer than
+  that forced a full model reload on top of cold prompt-eval), and a
+  `num_predict: 350` cap to bound worst-case generation length.
+- New `app/services/ai/cache_warmer.py`: a background loop (mirrors the
+  existing scheduler pattern) that re-pings the most-recently-active
+  agent's *exact* system+tools prefix every 60s during idle gaps, so a new
+  visitor's first message finds a warm cache instead of a cold one.
+  `AgentOrchestrator.run` now calls `mark_active(agent)` so the warmer
+  always tracks real traffic rather than guessing which business is live.
+- Config: `ollama_keep_alive`, `ollama_num_predict`, `cache_warmer_enabled`,
+  `cache_warmer_interval_seconds` (all in `app/core/config.py`).
+
+### Result (measured against the live ToleMate chat endpoint)
+- First message right after a server restart (true cold start, one-time
+  cost): 97s.
+- A brand-new visitor conversation once the warmer had run: **23.5s** —
+  down from the ~62s baseline measured in the previous round-trip fix.
+- Honest limit: this is still CPU-only 3B-parameter inference. Genuinely
+  sub-5-second responses for a multi-tool-call conversation (search,
+  schedule check, generate) aren't achievable on this hardware. Further
+  options if wanted: GPU acceleration, a smaller/faster model, or true
+  token streaming for better perceived responsiveness — none started
+  without being asked.
+
 ## Reduce round-trips per turn; widen timeout headroom (2026-10-04) — post-roadmap, by request
 
 ### Why

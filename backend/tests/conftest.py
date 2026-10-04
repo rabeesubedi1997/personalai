@@ -6,6 +6,7 @@ os.environ.setdefault("APP_ENV", "test")
 # The ASGI test client doesn't trigger app lifespan anyway, but keep this
 # explicit rather than relying on that incidentally (see app/main.py).
 os.environ.setdefault("SCHEDULER_ENABLED", "false")
+os.environ.setdefault("CACHE_WARMER_ENABLED", "false")
 
 import pytest
 import pytest_asyncio

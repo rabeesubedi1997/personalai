@@ -34,6 +34,10 @@ logger = get_logger(__name__)
 _RUNAWAY_STOP_SEQUENCES = ["<|im_start|>"]
 
 
+def _chat_options() -> dict[str, Any]:
+    return {"stop": _RUNAWAY_STOP_SEQUENCES, "num_predict": settings.ollama_num_predict}
+
+
 def _message_to_dict(msg: ChatMessage) -> dict[str, Any]:
     d: dict[str, Any] = {"role": msg.role, "content": msg.content}
     if msg.tool_call_id:
@@ -79,6 +83,7 @@ class OllamaProvider(AIProvider):
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            "keep_alive": settings.ollama_keep_alive,
         }
         if system:
             payload["system"] = system
@@ -92,7 +97,8 @@ class OllamaProvider(AIProvider):
             "model": self.model,
             "messages": [_message_to_dict(m) for m in messages],
             "stream": False,
-            "options": {"stop": _RUNAWAY_STOP_SEQUENCES},
+            "options": _chat_options(),
+            "keep_alive": settings.ollama_keep_alive,
         }
         data = await self._post("/api/chat", payload)
         message = data.get("message", {})
@@ -108,7 +114,8 @@ class OllamaProvider(AIProvider):
             "messages": [_message_to_dict(m) for m in messages],
             "tools": [_tool_spec_to_dict(t) for t in tools],
             "stream": False,
-            "options": {"stop": _RUNAWAY_STOP_SEQUENCES},
+            "options": _chat_options(),
+            "keep_alive": settings.ollama_keep_alive,
         }
         data = await self._post("/api/chat", payload)
         message = data.get("message", {})

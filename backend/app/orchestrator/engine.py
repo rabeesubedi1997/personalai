@@ -30,6 +30,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.agent_run import AgentRunStatus
 from app.services.ai.base import AIProvider, AIProviderError, ChatMessage
+from app.services.ai.cache_warmer import mark_active
 from app.tools.base import ApprovalRequiredError, ToolContext, ToolExecutionError
 from app.tools.registry import ToolRegistry
 
@@ -109,6 +110,8 @@ class AgentOrchestrator:
         context: ToolContext,
         history: list[ChatMessage] | None = None,
     ) -> OrchestratorResult:
+        mark_active(agent)
+
         tool_specs = self.tool_registry.specs_for(agent.allowed_tools)
         system_content = f"{_ANTI_NARRATION_PREAMBLE}\n\n{agent.system_prompt}"
         messages: list[ChatMessage] = [ChatMessage(role="system", content=system_content)]
