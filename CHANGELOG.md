@@ -1,5 +1,70 @@
 # Changelog
 
+## Dashboard UI (2026-10-04) — post-roadmap, by request
+
+With all 13 phases done, built real screens for every backend capability:
+login/signup, Dashboard (health + plan/usage), Agents (chat with any
+installed agent, live tool-trace display, conversation continuity),
+Marketplace (browse/install/uninstall), Approvals (approve/reject with
+notes), Billing (plan switch for admins), Notifications, and Admin
+(cross-tenant, platform-admin only).
+
+### Verification method, and why it mattered
+Built with Playwright driving a real headless Chromium against the real
+backend and a real signup/chat/uninstall/billing/admin flow — not just
+`next build` succeeding. **This caught 3 real bugs that a build check or
+the backend's own 150-test suite would never have found**, because they
+only manifest under real browser behavior (React 18/19 StrictMode's
+dev-mode double-effect-invocation) and real, if modest, network latency:
+
+1. **A genuine backend concurrency bug**: two near-simultaneous requests
+   for the same brand-new tenant's subscription/plan-catalog/agent-catalog
+   (StrictMode fires each mount-effect twice in dev, but two real browser
+   tabs or a retried request would trigger the identical race in
+   production) both saw "doesn't exist yet" and both tried to insert,
+   tripping a unique constraint. Unhandled, this 500'd — which the browser
+   reported as a confusing CORS error, since an unhandled 500 doesn't get
+   CORS headers attached. Root-caused and fixed in
+   `app/services/billing.py` (`seed_default_plans`, `ensure_subscription`)
+   and `app/services/marketplace.py`
+   (`ensure_default_agents_installed`): each idempotent seed/create now
+   writes on its own dedicated session rather than the caller's shared
+   request session.
+2. **A second-order bug hiding behind the first fix**: an initial fix
+   caught the IntegrityError and called `db.rollback()` on the shared
+   session — which did stop the 500, but `rollback()` expires every ORM
+   object already loaded on that session, including `current_user`
+   (loaded earlier by `get_current_user` on the *same* session, since
+   FastAPI dependency-caches `Depends(get_db)` per request). The next
+   plain attribute access on `current_user` anywhere later in that request
+   then attempted an implicit async lazy-reload outside a valid greenlet
+   context and raised `MissingGreenlet`. This is why the real fix uses an
+   isolated session for these writes instead of rollback-and-recover on
+   the shared one. Added `tests/test_concurrency_races.py`, including an
+   HTTP-level regression test that fires two concurrent real requests at
+   `GET /api/v1/billing/subscription` for a brand-new tenant.
+3. **A real latency bug, not a logic bug**: `GET /api/v1/health` — which
+   the dashboard calls on every page load — took **~4.4 seconds**,
+   consistently, because the Redis ping (Redis isn't running — our own
+   documented default dev state since Phase 1) had no explicit socket
+   timeout, and Windows' IPv6-then-IPv4 "localhost" resolution fallback
+   turned "nothing is listening" into a multi-second hang before failing.
+   Fixed in `app/core/redis_client.py`: explicit `socket_connect_timeout`/
+   `socket_timeout` plus a hard `asyncio.wait_for` cap — down to ~1 second.
+   Also tightened `OllamaProvider.health_check()`'s timeout from 5s to 2s
+   for the same reason (a liveness ping should feel instant).
+
+### Verified
+- `pytest -q` → 150 passed (147 → 150: the 3 new concurrency-race tests).
+- Scripted Playwright pass, final clean run: signup → dashboard (health
+  panel correctly shows `ok`/`ok`/`unavailable`/`ok`, plan shows Free
+  0/1000) → chat with `general_assistant` ("What time is it?", real Ollama
+  call, correct tool trace shown) → Marketplace (uninstall Tolemate,
+  button correctly flips to Install) → Billing (usage correctly shows
+  1/1000 after the chat run) → Notifications → Admin (tenant correctly
+  listed) — **zero console errors**, confirmed only after the three fixes
+  above; all three reproduced consistently before them.
+
 ## Phase 12 — Agent Marketplace (2026-10-04) — completes the original roadmap
 
 ### Added

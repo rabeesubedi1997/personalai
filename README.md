@@ -5,9 +5,11 @@ a multi-tenant commercial AI Workforce SaaS. See [docs/ARCHITECTURE.md](docs/ARC
 for the full vision and [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md)
 for the phase-by-phase build plan.
 
-**Current status: Phase 1 — Platform Foundation.** FastAPI backend, Next.js
-dashboard, JWT auth, tenant/user/role models, and a working provider-agnostic
-AI layer talking to a local Ollama + Qwen2.5 model — all verified end to end.
+**Current status: all 13 phases of the original roadmap complete** (Phase 0
+environment discovery through Phase 12 Agent Marketplace), plus a full
+dashboard UI — see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md)
+for the phase-by-phase history. 150 backend tests passing; every capability
+live-verified against a real running Ollama + Qwen2.5 3B stack, not mocked.
 
 ## Why local-first
 
@@ -52,23 +54,18 @@ cd frontend
 npm install
 npm run dev
 ```
-Open http://localhost:3000 — it shows live backend health and a login form.
+Open http://localhost:3000 — sign up ("Create account"), and you land on a
+full dashboard: Agents (chat with any installed agent, see its tool calls
+live), Marketplace (browse/install/uninstall), Approvals (approve/reject
+sensitive actions), Billing (plan + usage), Notifications, and (for the
+platform-admin role every signup gets) a cross-tenant Admin view.
 
-### 4. Create a dev user and try the AI smoke test
-```powershell
-curl -X POST http://localhost:8000/api/v1/auth/bootstrap `
-  -H "Content-Type: application/json" `
-  -d '{"email":"admin@example.com","password":"DevPassw0rd!"}'
-
-curl -X POST http://localhost:8000/api/v1/auth/login `
-  -H "Content-Type: application/json" `
-  -d '{"email":"admin@example.com","password":"DevPassw0rd!"}'
-# copy the access_token from the response, then:
-
-curl -X POST http://localhost:8000/api/v1/ai/smoke-test `
-  -H "Content-Type: application/json" -H "Authorization: Bearer <token>" `
-  -d '{"prompt":"Say hello in one short sentence."}'
+### 4. Or explore the API directly via Swagger
 ```
+http://localhost:8000/docs
+```
+Every endpoint is there, interactive, with a Bearer-token "Authorize"
+button — useful for anything not yet wired into a dashboard screen.
 
 ### Switching to PostgreSQL
 ```
@@ -93,9 +90,18 @@ cd backend
 .venv\Scripts\activate
 pytest -q
 ```
-9/9 passing as of Phase 1 (health, auth, AI provider unit tests — the AI
-provider tests use a mocked transport so CI doesn't depend on Ollama running;
-the `/api/v1/ai/smoke-test` endpoint above is the live integration check).
+150/150 passing. Tests use a deterministic fake AI provider so CI doesn't
+depend on Ollama running; every phase was additionally live-verified
+against the real Ollama + Qwen2.5 3B stack (see CHANGELOG.md for each
+phase's live-verification notes, and the honestly-reported model-reliability
+and real-bug findings along the way — nothing here was declared done on
+passing tests alone).
+
+The frontend has no automated test suite yet; it's been verified with a
+scripted Playwright pass driving a real headless browser against the real
+backend (not just a build check) — see CHANGELOG.md's "Dashboard UI" entry
+for 3 real bugs that surfaced only under that kind of testing and were
+fixed, not worked around.
 
 ## Repository layout
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

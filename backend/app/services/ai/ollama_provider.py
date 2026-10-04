@@ -124,8 +124,13 @@ class OllamaProvider(AIProvider):
         )
 
     async def health_check(self) -> bool:
+        # This backs GET /api/v1/health, which the dashboard calls on every
+        # page load — a liveness ping should feel instant even if Ollama is
+        # momentarily busy (e.g. mid-inference on another request), so this
+        # uses a short timeout distinct from ollama_request_timeout_seconds
+        # (which governs actual generate/chat calls and needs to be long).
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=2.0) as client:
                 response = await client.get(f"{self.base_url}/api/version")
                 return response.status_code == 200
         except httpx.HTTPError:

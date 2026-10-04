@@ -51,7 +51,7 @@ personalops-ai/
 │   │   └── main.py
 │   ├── alembic/            # DB migrations
 │   └── tests/
-├── frontend/                # Next.js admin dashboard
+├── frontend/                # Next.js admin dashboard — real screens for every backend capability (see below)
 ├── infrastructure/docker/   # (reserved for future compose overrides)
 ├── docs/
 ├── scripts/

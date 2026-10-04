@@ -13,9 +13,11 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.registry import get_agent, list_agents
+from app.db.session import async_session_factory
 from app.models.agent_installation import AgentInstallation
 
 
@@ -95,17 +97,31 @@ async def ensure_default_agents_installed(db: AsyncSession, tenant_id: uuid.UUID
     that has explicitly uninstalled an agent (which leaves a disabled row
     behind) must stay uninstalled; re-running this on every request would
     silently undo that choice and defeat the whole point of the feature.
+
+    The write happens on its own dedicated session, not `db` — same reason
+    as `billing.seed_default_plans`: rolling back the shared/caller session
+    on a conflict would expire every object already loaded on it (e.g.
+    `current_user`), crashing the next plain attribute access elsewhere in
+    the request with `MissingGreenlet`.
     """
     existing = await list_installed(db, tenant_id)
     if existing:
         return
-    for agent in list_agents():
-        db.add(
-            AgentInstallation(
-                tenant_id=tenant_id,
-                agent_slug=agent.name,
-                version_installed=agent.version,
-                is_enabled=True,
-            )
+    rows = [
+        AgentInstallation(
+            tenant_id=tenant_id,
+            agent_slug=agent.name,
+            version_installed=agent.version,
+            is_enabled=True,
         )
-    await db.commit()
+        for agent in list_agents()
+    ]
+    try:
+        async with async_session_factory() as write_db:
+            write_db.add_all(rows)
+            await write_db.commit()
+    except IntegrityError:
+        # A concurrent request for this same brand-new tenant won first and
+        # already inserted these rows — the desired end state (full catalog
+        # installed) is already true, nothing more to do.
+        pass
