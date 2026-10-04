@@ -19,20 +19,31 @@ from app.tools.base import PermissionLevel, Tool, ToolContext, ToolExecutionErro
 
 def _describe_provider(p: dict[str, Any]) -> str:
     # Mock providers have a flat `name`; real ones additionally have a
-    # separate `vendor_name` and `price` — include whatever's present
-    # rather than assuming either connector's exact shape.
+    # separate `vendor_name`, `price`, and `open_days` — include whatever's
+    # present rather than assuming either connector's exact shape.
     label = p["name"]
     if p.get("vendor_name"):
         label = f"{label} by {p['vendor_name']}"
     price_part = f", {p['price']}" if p.get("price") is not None else ""
-    return f"{label} ({p['location']}, rating {p['rating']}{price_part}, id={p['id']})"
+    summary = f"{label} ({p['location']}, rating {p['rating']}{price_part}, id={p['id']})"
+    if p.get("open_days"):
+        # Embedded directly in the search result (not a separate tool call)
+        # so the agent can offer real times to the customer in this same
+        # turn, rather than needing another slow round-trip to ask for them.
+        summary += f" — open: {', '.join(p['open_days'])}"
+    elif p.get("available_dates"):
+        summary += f" — available: {', '.join(p['available_dates'])}"
+    return summary
 
 
 class SearchServiceProvidersTool(Tool):
     name = "search_service_providers"
     description = (
         "Search Tolemate for service providers (e.g. electrician, plumber) by "
-        "service type and optionally location."
+        "service type and optionally location. Results already include each "
+        "provider's open days/times where known — offer those to the customer "
+        "directly from this result; only call get_provider_schedule separately "
+        "if you need to recheck one specific provider later in the conversation."
     )
     parameters: dict[str, Any] = {
         "type": "object",

@@ -33,6 +33,7 @@ API endpoints or business rules"):
 """
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 import secrets
@@ -100,6 +101,14 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     dp, dl = math.radians(lat2 - lat1), math.radians(lng2 - lng1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * r * math.asin(math.sqrt(a))
+
+
+def _format_open_days(days: list[dict]) -> list[str]:
+    return [
+        f"{_DAY_NAMES[d['day_of_week']]} {d.get('start_time', '')}-{d.get('end_time', '')}"
+        for d in sorted(days, key=lambda d: d.get("day_of_week", 0))
+        if d.get("is_available") and d.get("day_of_week") is not None
+    ]
 
 
 def _nearest_known_city(lat: Any, lng: Any) -> str | None:
@@ -181,7 +190,26 @@ class RealTolemateConnector:
                     cat_resp.raise_for_status()
                     items = cat_resp.json().get("data", [])
 
-        return [self._to_provider_dict(item) for item in items]
+        # Eagerly fetch the top few results' schedules in parallel and fold
+        # them into the search response itself, so the common flow (find a
+        # provider, then tell the customer when they're open) doesn't cost
+        # a second, separate, slow LLM round-trip just to call
+        # get_provider_schedule next — on a CPU-only local model, each
+        # avoided round-trip is tens of seconds, not milliseconds. Capped
+        # to the top 3 so a broad search doesn't fan out into dozens of
+        # real HTTP calls; get_provider_schedule stays available as a tool
+        # for anything beyond that cap or to recheck one specifically.
+        top_items = items[:3]
+        schedules = await asyncio.gather(
+            *(self._fetch_weekly_schedule(item["vendor"]["id"]) for item in top_items),
+            return_exceptions=True,
+        )
+        providers = []
+        for item, schedule_result in zip(top_items, schedules):
+            days = schedule_result if isinstance(schedule_result, list) else []
+            providers.append(self._to_provider_dict(item, days))
+        providers.extend(self._to_provider_dict(item, []) for item in items[3:])
+        return providers
 
     async def _resolve_category_id(self, client: httpx.AsyncClient, service: str) -> int | None:
         category_name = _SERVICE_TERM_TO_CATEGORY.get(service.strip().lower())
@@ -194,7 +222,7 @@ class RealTolemateConnector:
                 return cat.get("id")
         return None
 
-    def _to_provider_dict(self, item: dict) -> dict:
+    def _to_provider_dict(self, item: dict, schedule_days: list[dict]) -> dict:
         vendor = item.get("vendor") or {}
         vendor_user = vendor.get("user") or {}
         city = _nearest_known_city(vendor_user.get("lat"), vendor_user.get("lng"))
@@ -205,7 +233,8 @@ class RealTolemateConnector:
             "location": city or "Location not specified",
             "rating": vendor.get("rating", 0),
             "price": item.get("price"),
-            "available_dates": [],  # real availability is a weekly schedule, not discrete dates — see acheck_availability
+            "available_dates": [],  # real availability is a weekly schedule, not discrete dates
+            "open_days": _format_open_days(schedule_days),
         }
 
     async def _fetch_weekly_schedule(self, vendor_id: int) -> list[dict]:
@@ -223,12 +252,7 @@ class RealTolemateConnector:
         time."""
         vendor_id, _service_id = _decode_id(provider_id)
         days = await self._fetch_weekly_schedule(vendor_id)
-        open_days = [
-            f"{_DAY_NAMES[d['day_of_week']]} {d.get('start_time', '')}-{d.get('end_time', '')}"
-            for d in sorted(days, key=lambda d: d.get("day_of_week", 0))
-            if d.get("is_available") and d.get("day_of_week") is not None
-        ]
-        return {"provider_id": provider_id, "open_days": open_days}
+        return {"provider_id": provider_id, "open_days": _format_open_days(days)}
 
     async def acheck_availability(self, provider_id: str, date: str) -> bool:
         vendor_id, _service_id = _decode_id(provider_id)

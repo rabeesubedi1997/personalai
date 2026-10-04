@@ -33,6 +33,10 @@ async def test_decode_id_rejects_garbage():
 
 async def test_search_providers_maps_real_response_shape(monkeypatch):
     async def fake_get(self, url, params=None, **kwargs):
+        if url.endswith("/availability"):
+            return _json_response(
+                200, {"availability": [{"day_of_week": 1, "start_time": "09:00", "end_time": "17:00", "is_available": True}]}
+            )
         assert url.endswith("/api/services/search")
         return _json_response(
             200,
@@ -64,12 +68,17 @@ async def test_search_providers_maps_real_response_shape(monkeypatch):
     assert p["vendor_name"] == "Sparkling Clean Services"
     assert p["location"] == "Kathmandu"
     assert p["price"] == 200
+    # The top result's schedule is fetched eagerly and folded in, so the
+    # agent can offer it without a second, separate LLM round-trip.
+    assert p["open_days"] == ["Monday 09:00-17:00"]
 
 
 async def test_search_falls_back_to_broad_query_when_geo_filter_empty(monkeypatch):
     calls = []
 
     async def fake_get(self, url, params=None, **kwargs):
+        if url.endswith("/availability"):
+            return _json_response(200, {"availability": []})
         calls.append(params or {})
         if "lat" in (params or {}):
             return _json_response(200, {"data": []})

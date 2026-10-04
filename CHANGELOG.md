@@ -1,5 +1,59 @@
 # Changelog
 
+## Reduce round-trips per turn; widen timeout headroom (2026-10-04) — post-roadmap, by request
+
+### Why
+User report: "i din't get quick response... Something went wrong reaching
+the AI assistant." Two real, separate causes, not one:
+1. A booking conversation needed multiple separate LLM round-trips (search,
+   then a second call just to fetch the schedule, then more for
+   availability/booking) — each 20-90s+ on CPU-only inference, so the
+   total easily exceeded the 150s timeout ceiling on both the Laravel
+   proxy and the widget's HTTP client, surfacing as a scary client-side
+   error even when the backend might still have been working.
+2. True "instant" response isn't achievable with a 3B-parameter model on
+   CPU-only inference (confirmed: `size_vram: 0` from Ollama, no GPU
+   offload) — that's a hardware ceiling, not a bug. The real lever is
+   reducing how many round-trips one customer turn needs, not chasing
+   sub-second replies that this hardware can't deliver.
+
+### Fixed
+- **search_service_providers now embeds each top result's schedule
+  directly** (`app/connectors/tolemate/real_connector.py`): the top 3
+  results' weekly schedules are fetched in parallel (`asyncio.gather`,
+  real HTTP calls to ToleMate — milliseconds, not an LLM round-trip) and
+  folded into the search response, so the common "find a provider, tell
+  me when they're open" flow needs ONE LLM turn instead of two separate
+  ones (search, then a follow-up get_provider_schedule call). Live-timed:
+  a full "i need plumbing in kathmandu" turn, including the model
+  explaining both providers' schedules, completed in **62 seconds** (2
+  LLM calls total) instead of needing a 3rd round-trip as before.
+- **Timeout ceiling widened 150s → 280s** on the ToleMate side
+  (`AiAgentController.php`, `AiChatWidget.tsx`, `AdminDashboard.tsx`'s test
+  button) — a safety margin, not a speed fix, so a legitimately-longer
+  multi-step conversation doesn't get killed mid-flight and misreported as
+  "something went wrong" when the backend may still be working.
+- **Progressive waiting status in the chat widget** (`AiChatWidget.tsx`):
+  "Typing…" → "Still thinking…" (12s) → "Checking details, this can take
+  a minute…" (35s) → "Almost there…" (90s), so a long CPU-bound wait reads
+  as "working" rather than "frozen."
+- Trimmed the Tolemate agent's system prompt for fewer tokens processed
+  per call (marginal per-call saving, compounds across iterations).
+
+### Verified
+- `pytest -q` → **195 passed** (2 existing search tests updated for the
+  new eager-schedule-fetch call shape; no new test count change, same
+  coverage re-targeted).
+- Live: confirmed in backend logs that a single search call now fires the
+  schedule fetches in parallel automatically, and the final response
+  correctly surfaces that embedded data without a second LLM call.
+- A follow-up "mojibake" scare (an em-dash appearing as garbled
+  `â€”`) was traced to a Windows/Git-Bash terminal display
+  artifact in my own debugging pipeline (`cat | python -m json.tool`
+  mis-decoding on stdin) — confirmed via raw byte inspection that the
+  actual API response was correctly UTF-8 (`\xe2\x80\x94`) throughout; no
+  code change needed, false alarm ruled out rather than assumed fine.
+
 ## Offer real schedule instead of asking the customer to guess a date (2026-10-04) — post-roadmap, by request
 
 ### Why
