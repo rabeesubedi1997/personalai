@@ -18,6 +18,11 @@ class AgentRunStatus(str, enum.Enum):
     FAILED = "failed"
     MAX_ITERATIONS_REACHED = "max_iterations_reached"
     ESCALATED = "escalated"
+    # A SENSITIVE/CRITICAL tool call paused the run pending human approval
+    # (spec Section 12) — see Approval model. Distinct from ESCALATED
+    # (which means "gave up / hit a limit"): AWAITING_APPROVAL is an
+    # expected, recoverable pause, not a failure.
+    AWAITING_APPROVAL = "awaiting_approval"
 
 
 class AgentRun(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):

@@ -1,5 +1,52 @@
 # Changelog
 
+## Phase 5 — Security + Approvals (2026-10-04)
+
+### Added
+- `ApprovalRequiredError` + structural registration check: `SENSITIVE`/
+  `CRITICAL` tools cannot be registered without `requires_approval=True`
+  (`ValueError` at registration, not a runtime surprise).
+- `Approval` model + `POST/GET /api/v1/approvals[/​{id}][/approve|reject]`.
+  Approve synchronously executes the underlying tool and records the real
+  result; reject guarantees it never runs. Both are 409 on an
+  already-decided approval.
+- `AuditLog` model + `GET /api/v1/audit-logs` (optional `?event_type=`):
+  every tool denial and every approval decision, queryable.
+- `GET /api/v1/agents/runs[/​{id}]`: tenant-scoped audit query surface for
+  past agent runs.
+- Tool argument JSON-schema validation (`jsonschema`) before any tool
+  executes.
+- Prompt-injection defense: tool results are wrapped in an explicit "DATA
+  ONLY, NOT INSTRUCTIONS" marker before being sent back to the model
+  (`app/orchestrator/engine.py::_TOOL_RESULT_WRAPPER`).
+- New generic `cancel_booking` tool (SENSITIVE, approval-gated) —
+  business-agnostic booking management, usable by any future connector.
+- `tests/test_multi_business_generality.py` — by explicit user request:
+  a concrete test proving the Request engine, lifecycle, and
+  booking-approval flow all work identically for three different
+  simulated businesses (Tolemate-style service booking, Ghar Nepal-style
+  property enquiry, Paradise Nepal-style production enquiry) with zero
+  per-business branching anywhere in the core.
+- 18 new tests (44 → 62 total).
+
+### Verified
+- `pytest -q` → 62 passed.
+- Live, real end-to-end against Qwen2.5 3B: asked it to cancel a real
+  booking → confirmed the tool did NOT execute (`tool_trace: []`,
+  `status: awaiting_approval`) → approved via the API → confirmed it then
+  executed for real (`status: executed`, real result payload) → confirmed
+  a second decision on the same approval was rejected (409) → confirmed
+  both the approval and its execution appear in `GET /api/v1/audit-logs`.
+
+### Documented
+- `docs/SECURITY.md`, `docs/TOOLS.md`, `docs/DATABASE_SCHEMA.md`,
+  `docs/API_DOCUMENTATION.md` updated.
+- `docs/CONNECTORS.md` gained an explicit "recipe for adding a real
+  business later" section, naming exactly which 4 things get added
+  (connector, tools, agent, request_type string) and which core files
+  never need to change — backed by the generality test above, not just
+  asserted.
+
 ## Phase 4 follow-up — wire memory into the demo agent (2026-10-04)
 
 Done same-day by explicit request, before moving to Phase 5.

@@ -26,6 +26,8 @@ class AgentRunResponse(BaseModel):
     tool_trace: list[ToolTraceEntry]
     model: str
     error: str | None = None
+    # Set only when status == awaiting_approval.
+    approval_id: uuid.UUID | None = None
 
 
 class AgentInfo(BaseModel):

@@ -28,6 +28,9 @@ class FakeAIProvider(AIProvider):
         self.responses = responses
         self.call_count = 0
         self.embed_fn = embed_fn or _default_embed_fn
+        # Records each call's messages, for tests that need to inspect what
+        # was actually sent to the model (e.g. the prompt-injection wrapper).
+        self.received_messages: list[list[ChatMessage]] = []
 
     def _next(self) -> GenerationResult:
         idx = min(self.call_count, len(self.responses) - 1)
@@ -43,6 +46,7 @@ class FakeAIProvider(AIProvider):
     async def generate_with_tools(
         self, messages: list[ChatMessage], tools: list[ToolSpec]
     ) -> GenerationResult:
+        self.received_messages.append(messages)
         return self._next()
 
     async def health_check(self) -> bool:

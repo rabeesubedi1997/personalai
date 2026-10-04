@@ -1,9 +1,13 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.registry import get_agent, list_agents
 from app.db.session import get_db
-from app.models.agent_run import AgentRun
+from app.models.agent_run import AgentRun, AgentRunStatus
+from app.models.approval import Approval
 from app.models.user import User
 from app.orchestrator import AgentOrchestrator
 from app.schemas.agents import AgentInfo, AgentRunRequest, AgentRunResponse, ToolInfo
@@ -73,6 +77,21 @@ async def run_agent(
     await db.commit()
     await db.refresh(run)
 
+    approval_id = None
+    if result.status == AgentRunStatus.AWAITING_APPROVAL and result.pending_approval:
+        approval = Approval(
+            tenant_id=current_user.tenant_id,
+            agent_run_id=run.id,
+            agent_name=agent.name,
+            tool_name=result.pending_approval["tool"],
+            arguments=result.pending_approval["arguments"],
+            allowed_tool_names=agent.allowed_tools,
+        )
+        db.add(approval)
+        await db.commit()
+        await db.refresh(approval)
+        approval_id = approval.id
+
     return AgentRunResponse(
         run_id=run.id,
         agent=agent.name,
@@ -82,4 +101,59 @@ async def run_agent(
         tool_trace=result.tool_trace,
         model=result.model,
         error=result.error,
+        approval_id=approval_id,
+    )
+
+
+@router.get("/agents/runs", response_model=list[AgentRunResponse])
+async def list_agent_runs(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[AgentRunResponse]:
+    """Query surface for spec Section 25/31: 'what did the agent do.'
+    Tenant-scoped like everything else."""
+    result = await db.execute(
+        select(AgentRun)
+        .where(AgentRun.tenant_id == current_user.tenant_id)
+        .order_by(AgentRun.created_at.desc())
+    )
+    runs = result.scalars().all()
+    return [
+        AgentRunResponse(
+            run_id=r.id,
+            agent=r.agent_name,
+            status=r.status,
+            final_response=r.final_response,
+            iterations=r.iterations,
+            tool_trace=r.tool_trace,
+            model=r.model,
+            error=r.error,
+        )
+        for r in runs
+    ]
+
+
+@router.get("/agents/runs/{run_id}", response_model=AgentRunResponse)
+async def get_agent_run(
+    run_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AgentRunResponse:
+    result = await db.execute(
+        select(AgentRun).where(
+            AgentRun.id == run_id, AgentRun.tenant_id == current_user.tenant_id
+        )
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
+    return AgentRunResponse(
+        run_id=run.id,
+        agent=run.agent_name,
+        status=run.status,
+        final_response=run.final_response,
+        iterations=run.iterations,
+        tool_trace=run.tool_trace,
+        model=run.model,
+        error=run.error,
     )

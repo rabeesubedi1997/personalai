@@ -19,6 +19,13 @@ whole app down.
   creates a fresh tenant + the first `platform_admin` user. One-time use per
   email; returns 409 if the email already exists.
 
+## Agents (continued) — `POST /api/v1/agents/run` response note
+As of Phase 5, `status` can also be `awaiting_approval` — the run paused
+because it tried to use a `SENSITIVE`/`CRITICAL` tool (e.g. `cancel_booking`).
+`tool_trace` will NOT include that tool call (it never executed);
+`approval_id` is set so the caller can act on it via the Approvals endpoints
+below.
+
 ## AI (smoke test only — not the agent system)
 - `POST /api/v1/ai/smoke-test` — Bearer token required, `{ prompt }` →
   `{ model, content }`. Calls the configured `AIProvider` directly
@@ -70,5 +77,30 @@ All tenant-scoped, Bearer token required.
   `[{ memory, score }]` by cosine similarity against the query's embedding.
   A tenant with no matching memories gets `[]`, never another tenant's data.
 
+## Agent runs — audit query surface (Phase 5)
+- `GET /api/v1/agents/runs` — list this tenant's agent runs, newest first.
+- `GET /api/v1/agents/runs/{id}` — a single run.
+Both return the same shape as `POST /api/v1/agents/run`'s response.
+
+## Approvals — Human Approval Engine (Phase 5)
+All tenant-scoped, Bearer token required.
+- `GET /api/v1/approvals` — optional `?status=pending|rejected|executed|failed`.
+- `GET /api/v1/approvals/{id}`
+- `POST /api/v1/approvals/{id}/approve` — `{ note? }`. Actually executes the
+  underlying tool now (synchronously) and records the real result —
+  status becomes `executed` on success or `failed` on a tool error, never
+  a false `executed`. 409 if already decided.
+- `POST /api/v1/approvals/{id}/reject` — `{ note? }`. The tool never runs.
+  409 if already decided.
+
+When an agent run status is `awaiting_approval` (see Agents below), the
+response includes `approval_id` to act on.
+
+## Audit Logs (Phase 5)
+- `GET /api/v1/audit-logs` — optional `?event_type=` filter
+  (`tool_call_denied`, `approval_approved`, `approval_rejected`,
+  `approval_executed`, `approval_execution_failed`). Tenant-scoped.
+
 ## Planned endpoints (future phases)
-- `POST /api/v1/approvals/{id}/approve|reject` — Phase 5
+None currently — Phase 6+ adds business-specific endpoints under their own
+connectors, not changes to this core API surface.

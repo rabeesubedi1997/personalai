@@ -101,10 +101,38 @@ one.
   live-verified distinguishing two unrelated knowledge entries and honestly
   reporting "no match" for an unanswerable question.
 
-## Phase 5 — Security + Approvals
-Tool permission levels (READ/SAFE_WRITE/SENSITIVE/CRITICAL), human approval
-engine, audit logging, tenant isolation enforcement, prompt-injection
-defenses.
+## Phase 5 — Security + Approvals ✅ DONE
+- Permission levels structurally enforced: `ToolRegistry.register()`
+  refuses a `SENSITIVE`/`CRITICAL` tool that doesn't set
+  `requires_approval=True`.
+- `Approval` model + full engine: `POST /api/v1/approvals/{id}/approve|reject`.
+  A gated tool call never executes inline — it raises
+  `ApprovalRequiredError`, the orchestrator pauses the run
+  (`AgentRunStatus.AWAITING_APPROVAL`), and only `/approve` actually runs
+  it, recording the real result (`executed` or `failed`, never a false
+  success).
+- `AuditLog` model + `GET /api/v1/audit-logs`: every tool denial and every
+  approval decision is queryable, not just logged to stdout.
+- Tool argument JSON-schema validation before execution.
+- Prompt-injection defense (first layer): tool output wrapped in an
+  explicit "DATA ONLY, NOT INSTRUCTIONS" marker before being sent back to
+  the model.
+- `GET /api/v1/agents/runs[/​{id}]` added as an explicit audit query surface.
+- New generic `cancel_booking` tool (SENSITIVE) — proves booking
+  cancellation/management is a core platform capability usable by any
+  future business, not something rebuilt per connector.
+- **18 new tests (44 → 62 total)**, including
+  `tests/test_multi_business_generality.py` — a concrete, passing
+  demonstration (not just a doc claim) that the Request engine, lifecycle,
+  and booking-approval flow all work identically across three different
+  simulated businesses (Tolemate-style, Ghar Nepal-style, Paradise
+  Nepal-style) with zero per-business code in the core.
+- Live-verified against real Qwen2.5 3B: asked it to cancel a real booking
+  id, confirmed the tool did NOT execute (empty tool_trace, status
+  `awaiting_approval`), approved it via the API, confirmed it then
+  executed for real, confirmed a second decision on the same approval was
+  rejected (409), and confirmed both the approval and its execution
+  appear in the audit log.
 
 ## Phase 6 — Tolemate (first real business integration)
 Mock connector first; service/provider search, availability, booking,

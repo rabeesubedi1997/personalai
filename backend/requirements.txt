@@ -24,6 +24,9 @@ python-multipart==0.0.20
 # AI provider (Ollama local HTTP API)
 httpx==0.28.1
 
+# Tool argument schema validation (spec Section 26: validate tool input/output)
+jsonschema==4.23.0
+
 # Logging
 structlog==24.4.0
 

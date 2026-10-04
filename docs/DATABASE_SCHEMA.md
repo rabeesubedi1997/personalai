@@ -100,8 +100,48 @@ dev/demo record counts, **not** what should run in production. Once
 instead of loading every row into Python. This is called out explicitly
 rather than left to be discovered later.
 
+## `approvals` (Phase 5)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID | indexed |
+| agent_run_id | UUID, nullable, indexed | which run triggered this |
+| agent_name | string | |
+| tool_name | string | |
+| arguments | JSON | the tool call's arguments, snapshotted at request time |
+| allowed_tool_names | JSON (list) | snapshot of the requesting agent's allow-list, re-checked at approve-time |
+| status | enum | `pending` / `rejected` / `executed` / `failed` |
+| decided_by_user_id | UUID, nullable | |
+| decision_note | text, nullable | |
+| result | JSON, nullable | set only if `executed` |
+| error | text, nullable | set only if `failed` |
+| created_at / updated_at | timestamptz | |
+
+Deliberately business-agnostic: a Tolemate booking cancellation and a Ghar
+Nepal viewing cancellation are both just `tool_name="cancel_booking"` with
+a different `booking_id` in `arguments` — see
+`tests/test_multi_business_generality.py` for the concrete proof.
+
+## `audit_logs` (Phase 5)
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| tenant_id | UUID | indexed |
+| event_type | string, indexed | `tool_call_denied` / `approval_approved` / `approval_rejected` / `approval_executed` / `approval_execution_failed` |
+| actor | string | user id, or `"agent"` for an automatic denial |
+| tool_name | string, nullable | |
+| agent_run_id | UUID, nullable, indexed | |
+| approval_id | UUID, nullable, indexed | |
+| status | string | |
+| detail | JSON | event-specific payload (arguments, result, error, note) — never secrets |
+| created_at | timestamptz | |
+
+Focused on security-relevant and human-decision events, not a duplicate of
+`AgentRun.tool_trace` (which already captures the full turn-by-turn trace
+for successful/failed tool calls within a run).
+
 ## Planned, not yet created (future phases)
-- `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 5
+- `roles`, `permissions` (fine-grained, beyond the Role enum) — Phase 6+
 - `workflows`, `workflow_steps` (if the Request/status_history model proves
   insufficient for multi-step business workflows) — reassessed before Phase 6
 - `conversations`, `messages`, `memories` — Phase 4

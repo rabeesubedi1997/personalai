@@ -4,8 +4,15 @@ import pytest
 
 from app.memory.store import MemoryStore
 from app.models.memory import MemoryType
-from app.tools.base import ToolContext, ToolExecutionError
-from app.tools.registry import get_tool_registry
+from app.tools.base import (
+    ApprovalRequiredError,
+    PermissionLevel,
+    Tool,
+    ToolContext,
+    ToolExecutionError,
+    ToolOutput,
+)
+from app.tools.registry import ToolRegistry, get_tool_registry
 from tests.fakes import FakeAIProvider
 
 pytestmark = pytest.mark.asyncio
@@ -71,6 +78,44 @@ async def test_search_knowledge_base_returns_real_memory_match(context):
         context=context,
     )
     assert "24/7" in output.content
+
+
+async def test_sensitive_tool_raises_approval_required_without_executing(context):
+    registry = get_tool_registry()
+    with pytest.raises(ApprovalRequiredError) as exc_info:
+        await registry.execute(
+            "cancel_booking",
+            {"booking_id": "BK-42"},
+            allowed_tool_names=["cancel_booking"],
+            context=context,
+        )
+    assert exc_info.value.tool_name == "cancel_booking"
+    assert exc_info.value.arguments == {"booking_id": "BK-42"}
+
+
+async def test_invalid_tool_arguments_rejected_by_schema(context):
+    registry = get_tool_registry()
+    with pytest.raises(ToolExecutionError):
+        # missing required "title"
+        await registry.execute(
+            "create_task", {}, allowed_tool_names=["create_task"], context=context
+        )
+
+
+async def test_registering_sensitive_tool_without_approval_is_rejected():
+    class _UnsafeSensitiveTool(Tool):
+        name = "unsafe_sensitive_tool"
+        description = "A sensitive tool that forgot requires_approval."
+        parameters = {"type": "object", "properties": {}}
+        permission_level = PermissionLevel.SENSITIVE
+        requires_approval = False  # the bug this test catches
+
+        async def execute(self, context, **kwargs):
+            return ToolOutput(content="should never run")
+
+    registry = ToolRegistry()
+    with pytest.raises(ValueError, match="requires_approval"):
+        registry.register(_UnsafeSensitiveTool())
 
 
 async def test_search_knowledge_base_reports_no_match_honestly(context):

@@ -35,6 +35,18 @@ class ToolExecutionError(RuntimeError):
     crash the agent loop or silently appear as success."""
 
 
+class ApprovalRequiredError(Exception):
+    """Raised by ToolRegistry.execute() instead of running a tool whose
+    `requires_approval` is True (spec Section 12). Not a failure — the
+    orchestrator catches this specifically and pauses the run as
+    AWAITING_APPROVAL rather than treating it like a tool error."""
+
+    def __init__(self, tool_name: str, arguments: dict[str, Any]) -> None:
+        super().__init__(f"Tool '{tool_name}' requires human approval before executing.")
+        self.tool_name = tool_name
+        self.arguments = arguments
+
+
 @dataclass
 class ToolOutput:
     content: str
