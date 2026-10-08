@@ -50,12 +50,11 @@ def build_warm_prefix(agent: BaseAgent, tool_registry: ToolRegistry) -> tuple[li
     # Mirrors AgentOrchestrator.run's prefix construction exactly — a
     # mismatched prefix (even one extra character) misses the cache and
     # defeats the whole point.
-    from app.orchestrator.engine import _ANTI_NARRATION_PREAMBLE
+    from app.orchestrator.engine import system_content_for
 
     tool_specs = tool_registry.specs_for(agent.allowed_tools)
-    system_content = f"{_ANTI_NARRATION_PREAMBLE}\n\n{agent.system_prompt}"
     messages = [
-        ChatMessage(role="system", content=system_content),
+        ChatMessage(role="system", content=system_content_for(agent)),
         ChatMessage(role="user", content="(cache warm-up ping — ignore)"),
     ]
     return messages, tool_specs
@@ -63,6 +62,16 @@ def build_warm_prefix(agent: BaseAgent, tool_registry: ToolRegistry) -> tuple[li
 
 async def run_forever(ai_provider: AIProvider, tool_registry: ToolRegistry, interval_seconds: float) -> None:
     logger.info("cache_warmer_started", interval_seconds=interval_seconds)
+    if _last_active_agent is None:
+        # Nothing has chatted yet (fresh start). Warm the light site agent
+        # right away: the first tick then loads the model into memory and
+        # primes a prefix, so the first visitor doesn't pay the whole cold
+        # load (measured: a request right after a restart ran 97-122s).
+        from app.agents.registry import get_agent
+
+        default_agent = get_agent("site_assistant")
+        if default_agent is not None:
+            mark_active(default_agent)
     stop_event = asyncio.Event()
     while not stop_event.is_set():
         agent = _last_active_agent

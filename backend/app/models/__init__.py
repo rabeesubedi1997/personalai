@@ -6,6 +6,7 @@ from app.models.audit_log import AuditLog
 from app.models.billing import Plan, SubscriptionStatus, TenantSubscription
 from app.models.business_connector import BusinessConnectorConfig
 from app.models.conversation import ConversationMessage
+from app.models.knowledge_site import KnowledgeSite, SiteStatus
 from app.models.memory import MemoryRecord, MemoryType
 from app.models.notification import Notification, NotificationChannel, NotificationStatus
 from app.models.request import TERMINAL_STATUSES, Request, RequestStatus
@@ -36,4 +37,6 @@ __all__ = [
     "AgentInstallation",
     "AgentApiKey",
     "BusinessConnectorConfig",
+    "KnowledgeSite",
+    "SiteStatus",
 ]

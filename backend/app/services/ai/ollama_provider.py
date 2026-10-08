@@ -6,6 +6,7 @@ OLLAMA_MODEL env vars — no model name is hard-coded here.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -17,6 +18,7 @@ from app.services.ai.base import (
     AIProviderError,
     ChatMessage,
     GenerationResult,
+    StreamChunk,
     ToolCall,
     ToolSpec,
 )
@@ -56,7 +58,27 @@ def _tool_spec_to_dict(tool: ToolSpec) -> dict[str, Any]:
     }
 
 
+def _parse_tool_calls(message: dict[str, Any], id_offset: int = 0) -> list[ToolCall]:
+    tool_calls: list[ToolCall] = []
+    for i, raw_call in enumerate(message.get("tool_calls", []) or []):
+        fn = raw_call.get("function", {})
+        raw_args = fn.get("arguments", {})
+        # Ollama normally returns parsed-object arguments already; be
+        # defensive in case a given model emits a JSON string instead.
+        if isinstance(raw_args, str):
+            try:
+                raw_args = json.loads(raw_args)
+            except json.JSONDecodeError:
+                raw_args = {}
+        tool_calls.append(
+            ToolCall(id=str(raw_call.get("id", i + id_offset)), name=fn.get("name", ""), arguments=raw_args)
+        )
+    return tool_calls
+
+
 class OllamaProvider(AIProvider):
+    streams_natively = True
+
     def __init__(
         self,
         base_url: str | None = None,
@@ -120,20 +142,7 @@ class OllamaProvider(AIProvider):
         data = await self._post("/api/chat", payload)
         message = data.get("message", {})
 
-        tool_calls: list[ToolCall] = []
-        for i, raw_call in enumerate(message.get("tool_calls", []) or []):
-            fn = raw_call.get("function", {})
-            raw_args = fn.get("arguments", {})
-            # Ollama normally returns parsed-object arguments already; be
-            # defensive in case a given model emits a JSON string instead.
-            if isinstance(raw_args, str):
-                try:
-                    raw_args = json.loads(raw_args)
-                except json.JSONDecodeError:
-                    raw_args = {}
-            tool_calls.append(
-                ToolCall(id=str(raw_call.get("id", i)), name=fn.get("name", ""), arguments=raw_args)
-            )
+        tool_calls = _parse_tool_calls(message)
 
         return GenerationResult(
             content=message.get("content", ""),
@@ -141,6 +150,75 @@ class OllamaProvider(AIProvider):
             raw=data,
             model=self.model,
         )
+
+    async def stream_with_tools(
+        self, messages: list[ChatMessage], tools: list[ToolSpec]
+    ) -> AsyncIterator[StreamChunk]:
+        """Same request as generate_with_tools but with stream=true: Ollama
+        sends newline-delimited JSON, reply text arrives token by token and
+        any tool call arrives as its own chunk (verified on Ollama 0.5.7)."""
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [_message_to_dict(m) for m in messages],
+            "stream": True,
+            "options": _chat_options(),
+            "keep_alive": settings.ollama_keep_alive,
+        }
+        if tools:
+            payload["tools"] = [_tool_spec_to_dict(t) for t in tools]
+
+        url = f"{self.base_url}/api/chat"
+        content_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with client.stream("POST", url, json=payload) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+                        data = json.loads(line)
+                        message = data.get("message", {})
+                        text = message.get("content", "")
+                        if text:
+                            content_parts.append(text)
+                            yield StreamChunk(text=text)
+                        tool_calls.extend(_parse_tool_calls(message, len(tool_calls)))
+                        if data.get("done"):
+                            break
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            logger.error("ollama_stream_failed", url=url, error=str(exc))
+            raise AIProviderError(f"Ollama streaming request failed: {exc}") from exc
+
+        yield StreamChunk(
+            final=GenerationResult(
+                content="".join(content_parts), tool_calls=tool_calls, model=self.model
+            )
+        )
+
+    async def extract_json(
+        self, messages: list[ChatMessage], schema: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Structured extraction: Ollama constrains the output to `schema`, so a
+        small model fills fields in rather than free-chatting. Temperature 0 and
+        a short cap — this is reading, not writing."""
+        payload = {
+            "model": self.model,
+            "messages": [_message_to_dict(m) for m in messages],
+            "stream": False,
+            "format": schema,
+            "options": {"temperature": 0, "num_predict": 200},
+            "keep_alive": settings.ollama_keep_alive,
+        }
+        data = await self._post("/api/chat", payload)
+        content = data.get("message", {}).get("content", "")
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise AIProviderError(f"Ollama returned invalid JSON for extraction: {content[:200]!r}") from exc
+        if not isinstance(parsed, dict):
+            raise AIProviderError("Ollama extraction did not return a JSON object.")
+        return parsed
 
     async def health_check(self) -> bool:
         # This backs GET /api/v1/health, which the dashboard calls on every

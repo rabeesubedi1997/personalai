@@ -24,8 +24,14 @@ class FakeAIProvider(AIProvider):
         self,
         responses: list[GenerationResult],
         embed_fn: Callable[[str], list[float]] | None = None,
+        json_responses: list[dict] | None = None,
     ):
         self.responses = responses
+        # What extract_json returns, one per call (the last repeats). None means
+        # this fake doesn't support structured extraction, like a real provider
+        # that can't constrain output to a schema.
+        self.json_responses = json_responses
+        self.json_calls: list[list[ChatMessage]] = []
         self.call_count = 0
         self.embed_fn = embed_fn or _default_embed_fn
         # Records each call's messages, for tests that need to inspect what
@@ -48,6 +54,13 @@ class FakeAIProvider(AIProvider):
     ) -> GenerationResult:
         self.received_messages.append(messages)
         return self._next()
+
+    async def extract_json(self, messages, schema):
+        if self.json_responses is None:
+            return await super().extract_json(messages, schema)
+        self.json_calls.append(list(messages))
+        index = min(len(self.json_calls) - 1, len(self.json_responses) - 1)
+        return self.json_responses[index]
 
     async def health_check(self) -> bool:
         return True

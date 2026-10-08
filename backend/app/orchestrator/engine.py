@@ -23,13 +23,24 @@ caller to persist via ConversationStore and pass back in on the next call.
 """
 from __future__ import annotations
 
+import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Literal
 
 from app.agents.base_agent import BaseAgent
+from app.agents.flow import FlowOutcome, FlowToolResult
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.agent_run import AgentRunStatus
-from app.services.ai.base import AIProvider, AIProviderError, ChatMessage
+from app.services.ai.base import (
+    AIProvider,
+    AIProviderError,
+    ChatMessage,
+    GenerationResult,
+    ToolCall,
+)
 from app.services.ai.cache_warmer import mark_active
 from app.tools.base import ApprovalRequiredError, ToolContext, ToolExecutionError
 from app.tools.registry import ToolRegistry
@@ -78,6 +89,47 @@ def _looks_like_incomplete_tool_call(content: str) -> bool:
     return _INCOMPLETE_TOOL_CALL_MARKER in content
 
 
+def system_content_for(agent: BaseAgent) -> str:
+    """The exact system prompt an agent runs with. Shared with the prompt-cache
+    warmer, which must reproduce this byte-for-byte or Ollama misses its cache."""
+    parts = [_ANTI_NARRATION_PREAMBLE]
+    if agent.needs_current_date:
+        now = datetime.now()
+        parts.append(
+            f"Today is {now:%A %d %B %Y} ({now:%Y-%m-%d}). Work out 'today', 'tomorrow' "
+            "and weekday names from this date, and only ever use dates on or after it."
+        )
+    parts.append(agent.system_prompt)
+    return "\n\n".join(parts)
+
+
+# Words right before a match that mean the "confirmed" is about a detail the
+# customer gave ("your name is confirmed"), not about the action itself.
+_DETAIL_BEFORE_CLAIM = re.compile(
+    r"(name|e-?mail|details?|date|time|address|number|phone|information)\W*$", re.IGNORECASE
+)
+
+
+def claims_unbacked_success(agent: BaseAgent, content: str, messages: list[ChatMessage]) -> bool:
+    """True if `content` says the action succeeded ("your booking has been
+    confirmed") but no tool result in the conversation proves it. Agents opt in
+    via success_claim_pattern / success_proof_marker."""
+    if not agent.success_claim_pattern or not agent.success_proof_marker:
+        return False
+    claimed = False
+    for match in re.finditer(agent.success_claim_pattern, content, re.IGNORECASE):
+        if _DETAIL_BEFORE_CLAIM.search(content[max(0, match.start() - 25) : match.start()]):
+            continue
+        claimed = True
+        break
+    if not claimed:
+        return False
+    proved = any(
+        m.role == "tool" and agent.success_proof_marker in m.content for m in messages
+    )
+    return not proved
+
+
 @dataclass
 class OrchestratorResult:
     status: AgentRunStatus
@@ -98,6 +150,29 @@ class OrchestratorResult:
         return len(self.tool_trace)
 
 
+@dataclass
+class StreamEvent:
+    """What `AgentOrchestrator.run_stream` yields:
+      token  - a piece of reply text to show the visitor now
+      tool   - the agent is about to run tool `text` (for a "checking..." UI)
+      done   - the run finished; `result` is the complete OrchestratorResult
+    """
+
+    type: Literal["token", "tool", "done"]
+    text: str = ""
+    result: OrchestratorResult | None = None
+
+
+def _with_reference(user_message: str, reference_context: str | None) -> str:
+    """The text the model actually sees for the user's turn. The reference
+    block goes BEFORE the question (recency: the question is what the model
+    answers) and is never persisted — only the original message is stored in
+    the conversation, so history doesn't re-pay for stale excerpts each turn."""
+    if not reference_context:
+        return user_message
+    return f"{reference_context}\n\nCustomer message: {user_message}"
+
+
 class AgentOrchestrator:
     def __init__(self, ai_provider: AIProvider, tool_registry: ToolRegistry) -> None:
         self.ai_provider = ai_provider
@@ -109,33 +184,159 @@ class AgentOrchestrator:
         user_message: str,
         context: ToolContext,
         history: list[ChatMessage] | None = None,
+        reference_context: str | None = None,
     ) -> OrchestratorResult:
-        mark_active(agent)
+        async for event in self.run_stream(
+            agent, user_message, context, history, reference_context
+        ):
+            if event.type == "done":
+                assert event.result is not None
+                return event.result
+        raise RuntimeError("run_stream ended without a done event")  # unreachable
 
+    async def _run_flow(
+        self,
+        agent: BaseAgent,
+        user_message: str,
+        history: list[ChatMessage],
+        context: ToolContext,
+        messages: list[ChatMessage],
+        tool_trace: list[dict],
+    ) -> FlowOutcome | None:
+        """Let the agent's code-driven flow answer, if it wants to. Its tool calls
+        go through the normal registry (permissions, timeouts) and are recorded
+        in the trace and transcript exactly like model-requested ones."""
+
+        async def run_tool(name: str, arguments: dict) -> FlowToolResult:
+            call_id = f"flow-{len(tool_trace) + 1}"
+            try:
+                output = await self.tool_registry.execute(
+                    name, arguments, allowed_tool_names=agent.allowed_tools, context=context
+                )
+                result = FlowToolResult(output.content, output.data, False)
+                transcript_text = _TOOL_RESULT_WRAPPER.format(content=output.content)
+            except ToolExecutionError as exc:
+                result = FlowToolResult(str(exc), None, True)
+                transcript_text = f"ERROR: {exc}"
+            tool_trace.append(
+                {"tool": name, "arguments": arguments, "result": result.content, "is_error": result.is_error}
+            )
+            messages.append(
+                ChatMessage(
+                    role="assistant", content="", tool_calls=[ToolCall(id=call_id, name=name, arguments=arguments)]
+                )
+            )
+            messages.append(ChatMessage(role="tool", content=transcript_text, tool_call_id=call_id))
+            return result
+
+        try:
+            return await agent.flow.handle(
+                user_message=user_message,
+                history=history,
+                ai_provider=self.ai_provider,
+                run_tool=run_tool,
+            )
+        except Exception as exc:  # noqa: BLE001 - a flow bug must never take the chat down
+            logger.error("conversation_flow_failed", agent=agent.name, error=str(exc))
+            return None
+
+    async def run_stream(
+        self,
+        agent: BaseAgent,
+        user_message: str,
+        context: ToolContext,
+        history: list[ChatMessage] | None = None,
+        reference_context: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
         tool_specs = self.tool_registry.specs_for(agent.allowed_tools)
-        system_content = f"{_ANTI_NARRATION_PREAMBLE}\n\n{agent.system_prompt}"
-        messages: list[ChatMessage] = [ChatMessage(role="system", content=system_content)]
+        messages: list[ChatMessage] = [
+            ChatMessage(role="system", content=system_content_for(agent))
+        ]
+        # An agent with a success-claim guard can't have its reply streamed
+        # live: the claim is only checkable once the whole reply exists, and a
+        # false "booking confirmed" must never reach the customer, even briefly.
+        stream_live = self.ai_provider.streams_natively and not agent.success_claim_pattern
         if history:
             messages.extend(history)
         new_turn_start = len(messages)
-        messages.append(ChatMessage(role="user", content=user_message))
+        messages.append(
+            ChatMessage(role="user", content=_with_reference(user_message, reference_context))
+        )
+
+        def new_messages() -> list[ChatMessage]:
+            # Slicing copies the list, so swapping the first element only
+            # affects what gets persisted, not the live transcript.
+            out = messages[new_turn_start:]
+            out[0] = ChatMessage(role="user", content=user_message)
+            return out
 
         tool_trace: list[dict] = []
         model_name = ""
+        streamed_any = False
+
+        if agent.flow is not None:
+            outcome = await self._run_flow(
+                agent, user_message, history or [], context, messages, tool_trace
+            )
+            if outcome is not None:
+                messages.append(ChatMessage(role="assistant", content=outcome.reply))
+                yield StreamEvent(type="token", text=outcome.reply)
+                yield StreamEvent(
+                    type="done",
+                    result=OrchestratorResult(
+                        status=AgentRunStatus.COMPLETED,
+                        final_response=outcome.reply,
+                        iterations=1,
+                        tool_trace=tool_trace,
+                        model="booking-flow",
+                        new_messages=new_messages(),
+                    ),
+                )
+                return
+
+        # Only agents that fall through to the model loop warm the model's
+        # prompt cache — a flow-handled turn never uses the agent's big prompt.
+        mark_active(agent)
 
         for iteration in range(1, settings.agent_max_iterations + 1):
+            result = None
+            streaming_text = True  # flips off if the model starts a fake tool call
+            seen_text = ""
+            separator_pending = streamed_any
             try:
-                result = await self.ai_provider.generate_with_tools(messages, tool_specs)
+                async for chunk in self.ai_provider.stream_with_tools(messages, tool_specs):
+                    if chunk.final is not None:
+                        result = chunk.final
+                        continue
+                    seen_text += chunk.text
+                    if _looks_like_incomplete_tool_call(seen_text):
+                        streaming_text = False
+                    # Only forward text live from providers that truly
+                    # stream; for the rest the "chunk" is the whole reply
+                    # and is emitted below once we know it's a real answer.
+                    if streaming_text and stream_live and chunk.text:
+                        if separator_pending:
+                            yield StreamEvent(type="token", text="\n\n")
+                            separator_pending = False
+                        streamed_any = True
+                        yield StreamEvent(type="token", text=chunk.text)
             except AIProviderError as exc:
                 logger.error("orchestrator_provider_error", agent=agent.name, error=str(exc))
-                return OrchestratorResult(
-                    status=AgentRunStatus.FAILED,
-                    final_response="",
-                    iterations=iteration,
-                    tool_trace=tool_trace,
-                    error=str(exc),
-                    new_messages=messages[new_turn_start:],
+                yield StreamEvent(
+                    type="done",
+                    result=OrchestratorResult(
+                        status=AgentRunStatus.FAILED,
+                        final_response="",
+                        iterations=iteration,
+                        tool_trace=tool_trace,
+                        error=str(exc),
+                        new_messages=new_messages(),
+                    ),
                 )
+                return
+
+            if result is None:  # provider ended without a final chunk
+                result = GenerationResult(content=seen_text)
 
             model_name = result.model or model_name
 
@@ -162,16 +363,33 @@ class AgentOrchestrator:
                         )
                     )
                     continue
+                final_content = result.content
+                if claims_unbacked_success(agent, final_content, messages):
+                    # The model said the action happened, but no tool confirmed
+                    # it. Never show that to the customer, and never store it
+                    # in the history (it would be replayed as established fact).
+                    logger.warning(
+                        "orchestrator_unbacked_success_claim_blocked",
+                        agent=agent.name,
+                        claimed=final_content[:200],
+                    )
+                    final_content = agent.success_claim_correction
+                if not stream_live and final_content:
+                    yield StreamEvent(type="token", text=final_content)
                 # Model produced a final answer — done.
-                messages.append(ChatMessage(role="assistant", content=result.content))
-                return OrchestratorResult(
-                    status=AgentRunStatus.COMPLETED,
-                    final_response=result.content,
-                    iterations=iteration,
-                    tool_trace=tool_trace,
-                    model=model_name,
-                    new_messages=messages[new_turn_start:],
+                messages.append(ChatMessage(role="assistant", content=final_content))
+                yield StreamEvent(
+                    type="done",
+                    result=OrchestratorResult(
+                        status=AgentRunStatus.COMPLETED,
+                        final_response=final_content,
+                        iterations=iteration,
+                        tool_trace=tool_trace,
+                        model=model_name,
+                        new_messages=new_messages(),
+                    ),
                 )
+                return
 
             # Model requested one or more tool calls this turn.
             messages.append(
@@ -198,18 +416,23 @@ class AgentOrchestrator:
                                 tool_call_id=unresolved.id,
                             )
                         )
-                    return OrchestratorResult(
-                        status=AgentRunStatus.ESCALATED,
-                        final_response=(
-                            "This request needed more tool calls than allowed and was "
-                            "stopped for review rather than continuing unbounded."
+                    yield StreamEvent(
+                        type="done",
+                        result=OrchestratorResult(
+                            status=AgentRunStatus.ESCALATED,
+                            final_response=(
+                                "This request needed more tool calls than allowed and was "
+                                "stopped for review rather than continuing unbounded."
+                            ),
+                            iterations=iteration,
+                            tool_trace=tool_trace,
+                            model=model_name,
+                            new_messages=new_messages(),
                         ),
-                        iterations=iteration,
-                        tool_trace=tool_trace,
-                        model=model_name,
-                        new_messages=messages[new_turn_start:],
                     )
+                    return
 
+                yield StreamEvent(type="tool", text=call.name)
                 try:
                     output = await self.tool_registry.execute(
                         call.name,
@@ -257,18 +480,22 @@ class AgentOrchestrator:
                                 tool_call_id=unresolved.id,
                             )
                         )
-                    return OrchestratorResult(
-                        status=AgentRunStatus.AWAITING_APPROVAL,
-                        final_response=(
-                            f"This action ('{exc.tool_name}') requires human approval "
-                            "before it can proceed. It has been submitted for review."
+                    yield StreamEvent(
+                        type="done",
+                        result=OrchestratorResult(
+                            status=AgentRunStatus.AWAITING_APPROVAL,
+                            final_response=(
+                                f"This action ('{exc.tool_name}') requires human approval "
+                                "before it can proceed. It has been submitted for review."
+                            ),
+                            iterations=iteration,
+                            tool_trace=tool_trace,
+                            model=model_name,
+                            pending_approval={"tool": exc.tool_name, "arguments": exc.arguments},
+                            new_messages=new_messages(),
                         ),
-                        iterations=iteration,
-                        tool_trace=tool_trace,
-                        model=model_name,
-                        pending_approval={"tool": exc.tool_name, "arguments": exc.arguments},
-                        new_messages=messages[new_turn_start:],
                     )
+                    return
                 except ToolExecutionError as exc:
                     logger.warning("tool_call_error", tool=call.name, error=str(exc))
                     tool_trace.append(
@@ -288,14 +515,17 @@ class AgentOrchestrator:
             agent=agent.name,
             max_iterations=settings.agent_max_iterations,
         )
-        return OrchestratorResult(
-            status=AgentRunStatus.MAX_ITERATIONS_REACHED,
-            final_response=(
-                "This request could not be completed within the allowed number of "
-                "steps and was stopped rather than looping indefinitely."
+        yield StreamEvent(
+            type="done",
+            result=OrchestratorResult(
+                status=AgentRunStatus.MAX_ITERATIONS_REACHED,
+                final_response=(
+                    "This request could not be completed within the allowed number of "
+                    "steps and was stopped rather than looping indefinitely."
+                ),
+                iterations=settings.agent_max_iterations,
+                tool_trace=tool_trace,
+                model=model_name,
+                new_messages=new_messages(),
             ),
-            iterations=settings.agent_max_iterations,
-            tool_trace=tool_trace,
-            model=model_name,
-            new_messages=messages[new_turn_start:],
         )

@@ -4,12 +4,22 @@ demonstration from the master spec (Section 50's example, scaled down to
 what's actually built): find a provider, check availability, book, and
 confirm cancellation requires approval.
 """
+from datetime import date
+
 import pytest
 
 from app.services.ai.base import GenerationResult, ToolCall
 from tests.fakes import FakeAIProvider
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _pin_today(monkeypatch):
+    # The mock providers' availability is fixed to dates in October 2026, and
+    # the booking tools now reject past dates — so pin "today" or these tests
+    # would start failing the day after the mock dates go by.
+    monkeypatch.setattr("app.connectors.tolemate.tools._today", lambda: date(2026, 10, 5))
 
 
 async def _auth_headers(client, email: str) -> dict:

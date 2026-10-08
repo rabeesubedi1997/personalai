@@ -24,6 +24,12 @@ python-multipart==0.0.20
 # AI provider (Ollama local HTTP API)
 httpx==0.28.1
 
+# Website knowledge: crawl a URL and extract readable text (app/services/site_knowledge)
+beautifulsoup4==4.15.0
+# Optional-at-runtime: renders JavaScript-only sites (React/Vue) for the crawler.
+# After install run: playwright install chromium
+playwright==1.63.0
+
 # Tool argument schema validation (spec Section 26: validate tool input/output)
 jsonschema==4.23.0
 

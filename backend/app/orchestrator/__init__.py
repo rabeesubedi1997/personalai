@@ -1,3 +1,3 @@
-from app.orchestrator.engine import AgentOrchestrator, OrchestratorResult
+from app.orchestrator.engine import AgentOrchestrator, OrchestratorResult, StreamEvent
 
-__all__ = ["AgentOrchestrator", "OrchestratorResult"]
+__all__ = ["AgentOrchestrator", "OrchestratorResult", "StreamEvent"]

@@ -6,6 +6,7 @@ existing one). Cancelling an existing booking uses the platform's generic
 Tolemate-specific duplicate — see app/tools/mock_tools.py."""
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from app.connectors.tolemate.connector import (
@@ -15,6 +16,31 @@ from app.connectors.tolemate.connector import (
 )
 from app.connectors.tolemate.connector_factory import get_connector
 from app.tools.base import PermissionLevel, Tool, ToolContext, ToolExecutionError, ToolOutput
+
+
+def _today() -> date:
+    # A function (not date.today() inline) so tests can pin "today".
+    return date.today()
+
+
+def _require_bookable_date(value: str) -> None:
+    """Reject a malformed or past date BEFORE any connector call. The model has
+    no clock: asked to book "Friday" it guessed 2023, ToleMate then refused the
+    booking — but only after the real connector had already registered a new
+    customer account for the visitor, leaving an orphan account behind. Failing
+    here, with a message that tells the model today's date, avoids both."""
+    today = _today()
+    try:
+        parsed = date.fromisoformat(value.strip())
+    except ValueError:
+        raise ToolExecutionError(
+            f"'{value}' is not a valid date. Use YYYY-MM-DD (today is {today.isoformat()})."
+        ) from None
+    if parsed < today:
+        raise ToolExecutionError(
+            f"{value} is in the past (today is {today:%A %Y-%m-%d}). "
+            "Ask the customer for a date from today onward."
+        )
 
 
 def _describe_provider(p: dict[str, Any]) -> str:
@@ -119,6 +145,7 @@ class CheckProviderAvailabilityTool(Tool):
     async def execute(
         self, context: ToolContext, provider_id: str, date: str, **kwargs: Any
     ) -> ToolOutput:
+        _require_bookable_date(date)
         connector = await get_connector(context.db, context.tenant_id)
         try:
             available = await connector.acheck_availability(provider_id, date)
@@ -166,6 +193,7 @@ class CreateServiceBookingTool(Tool):
         notes: str = "",
         **kwargs: Any,
     ) -> ToolOutput:
+        _require_bookable_date(date)
         connector = await get_connector(context.db, context.tenant_id)
         try:
             booking = await connector.acreate_booking(

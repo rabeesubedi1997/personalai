@@ -2,13 +2,14 @@ from functools import lru_cache
 
 from app.agents.base_agent import BaseAgent
 from app.agents.general_assistant import GeneralAssistantAgent
+from app.agents.site_assistant import SiteAssistantAgent
 
 
 @lru_cache
 def _agents() -> dict[str, BaseAgent]:
     from app.connectors import all_business_agents
 
-    agents = [GeneralAssistantAgent(), *all_business_agents()]
+    agents = [GeneralAssistantAgent(), SiteAssistantAgent(), *all_business_agents()]
     return {agent.name: agent for agent in agents}
 
 

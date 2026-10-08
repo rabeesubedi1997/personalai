@@ -1,5 +1,199 @@
 # Changelog
 
+## Connect any website by URL; answer from it in one model call; stream replies (2026-10-05) — post-roadmap, by request
+
+### Why
+User goal: the chatbot should answer from the integrated site's own content,
+quickly, and a future website should plug in with no per-site code. Before
+this, each business needed a hand-written connector, the only knowledge source
+was a one-result `search_knowledge_base` tool fed by hand, and every answer
+was a chain of 2-4 model calls (10-25s each on CPU) with nothing shown until
+the end.
+
+A hosted-model provider (Claude) was started and **removed** at the user's
+request: the platform stays on local Ollama + Qwen at $0. Everything below
+works within that constraint.
+
+### Added
+- **`POST /api/v1/sites`** (+ list/get/recrawl/delete): give it a URL; it
+  crawls same-origin pages (sitemap + links, robots.txt honoured), extracts
+  text, drops repeated nav/footer lines, chunks, embeds with
+  `nomic-embed-text` and stores per tenant. `create_widget_key: true` also
+  issues the public chat key for the new generic agent — one call to put a
+  chat widget on a site. Runs in the background; poll `GET /sites/{id}`.
+- **JavaScript-only sites are handled**: if the plain HTML yields almost no
+  text (React/Vue shells), the crawler automatically re-crawls in headless
+  Chromium via Playwright (`playwright install chromium`). Verified against
+  ToleMate's own React build: static HTML was an empty shell; the browser
+  path indexed 10 real chunks.
+- **`site_assistant` agent** — generic, no tools. Relevant site excerpts are
+  retrieved *in code* before the model is called and placed next to the
+  customer's message (not stored in history), so an answer is exactly one
+  model call. Agents opt in via `uses_site_knowledge`; the Tolemate booking
+  agent now does too, for "how does it work / fees" questions.
+- **Streaming**: `AIProvider.stream_with_tools`, real NDJSON streaming in
+  `OllamaProvider`, `AgentOrchestrator.run_stream` (`run()` now just consumes
+  it, so the two can't drift), and `POST /api/v1/public/chat/stream` (SSE:
+  `start` / `token` / `tool` / `done` / `error`). Auth, install and quota
+  checks run before streaming starts so they remain real HTTP errors.
+- **ToleMate side** (separate repo, left uncommitted for review):
+  `AiAgentController::chatStream` + `POST /api/ai-agent/chat/stream`, and
+  `AiChatWidget.tsx` reads the stream (reply grows live; status text only
+  covers the wait before the first word). The old non-streaming endpoint is
+  untouched.
+
+### Measured (local Qwen2.5 3B, CPU only — no GPU)
+Generic Q&A on a 4-page test site, after tightening the agent to at most 2
+short sentences (reply length is the main lever: ~5 tokens/s):
+
+| | before prompt tightening | after |
+|---|---|---|
+| first token | 4-14s | 3-8s |
+| total | 6-24s | 5-13s |
+
+Indexing a 4-page site: ~1-2s. Warm replies can reach first word in ~1.4s.
+Model calls per answer: **1** (was 2-4).
+
+### Bad answers found in a real chat, and fixed (user report: "bullshit response")
+Reading the user's own conversation from `agent_runs` showed my site-excerpt
+injection had **broken the booking agent**: with excerpts in every Tolemate
+message the 3B model answered from them and called no tools (`tools=[]` all
+conversation). Result: invented availability ("available today 9-5"), a cleaner
+swapped for an electrician, the customer's email repeated back garbled
+(`...com.auau`), and a loop that never booked. (Before the change the same
+agent called `search_service_providers` correctly.)
+- Booking agent no longer receives excerpts; stricter prompt (search before
+  naming any provider/price/availability; copy the email exactly).
+- **Agent router** (`app/services/agent_router.py`): plain questions about the
+  site go to the light `site_assistant` (fast, streams); booking-ish messages
+  and an ongoing booking stay with the booking agent. Biased toward booking
+  because misrouting a booking silently fails to book.
+- Routing initially did nothing for the user's account: default agents are
+  only pre-installed for *brand-new* tenants, so older accounts never got
+  `site_assistant`, and "no install row" was read as "uninstalled". Fixed
+  (only an explicit disable counts), and `POST /sites` with a key now installs
+  the site agent — otherwise that key would 404 for older accounts.
+  Regression test confirmed to fail with the old logic.
+- Greetings/thanks skip retrieval (a bare "hello" had been answered with the
+  Contact page). The cache warmer now primes the site agent at startup (a first
+  request right after a restart had failed at 122s while the model loaded).
+- Verified live: mid-booking "Is there a guarantee?" -> site agent -> correct
+  "30-day guarantee", streamed; booking still calls its tool on real Tolemate
+  data. `pytest -q` → 239 passed.
+- **Not fixed:** the 3B model can still garble free text it must copy (the
+  email). Booking should validate the email in the tool, not trust the model.
+
+### "Booking confirmed" that didn't exist (user report: customer "bulla")
+Log + Tolemate DB showed: (1) the 07:19 attempt called `create_service_booking`
+with `date=2023-11-30` — the model has no clock — and ToleMate rejected it
+("scheduled time must be after now"), correctly reported; but the real
+connector had already registered customer #22 "Bulla" (next@gmail.com) before
+booking, leaving an **orphan account** with no booking. (2) The 07:21 turn made
+**no tool call at all** (`tools=[]`) yet replied "booking has been confirmed…
+confirmation email sent". Nothing existed (newest ToleMate booking was id 20,
+from the previous day).
+- Booking agent's system prompt now states today's date (`needs_current_date`;
+  the cache warmer builds the identical prompt via `system_content_for`).
+- `check_provider_availability` / `create_service_booking` reject past or
+  malformed dates **before any connector call**, with an error telling the model
+  today's date — this also prevents the orphan account in this common case.
+- **Success-claim guard** (`claims_unbacked_success`): a reply that says a
+  booking is confirmed/booked/scheduled is replaced with an honest message unless
+  a tool result containing `Booking confirmed:` exists in the conversation. The
+  false text is never streamed and never stored in history. Guarded agents hold
+  their reply back until checked. Mutation-checked: disabling the guard fails the
+  tests. Phrases about details ("your name is confirmed") are not flagged.
+- 260 tests pass (21 new in `tests/test_booking_safety.py`); existing Tolemate
+  tests pin "today" so the mock dates can't turn them into time bombs.
+- **Not fixed:** the 3B model still often skips `check_provider_availability`
+  and answers "available this Friday" from the provider's open days instead, and
+  can chat in circles rather than reach `create_service_booking`. The guard stops
+  false claims; it cannot make the model complete a booking. A structured booking
+  step (form/slots) driven by code, not the model, is the reliable fix.
+- A booking that fails *after* the connector registers the customer can still
+  leave an orphan ToleMate account (e.g. any rejection other than the date).
+  Customer #22 "Bulla" from this incident is still in ToleMate's `users` table.
+
+### Booking is now code-driven (user report: "why is it asking the same thing again and again?")
+The log showed the customer had given office cleaning, Kathmandu, tomorrow
+9am, name and email — yet `create_service_booking` was never called on any
+turn; the 3B model just kept chatting. My success-claim guard (above) then made
+it worse: it swapped the model's false "confirmed" for a generic "I need the
+provider, date, name and email", re-asking for things already given. The guard
+stops a lie; it cannot make a small model act.
+- **`ConversationFlow`** (`app/agents/flow.py`) + **`BookingFlow`**
+  (`app/connectors/tolemate/booking_flow.py`): the model only READS the chat
+  (Ollama structured-JSON extraction, new `AIProvider.extract_json`); code works
+  out what's missing, asks for exactly that, searches providers, checks
+  availability, asks for confirmation, calls `create_service_booking`, and writes
+  every reply from tool results — it can't claim a booking/price/availability no
+  tool returned. Runs through the normal tool registry (permissions, trace,
+  transcript). Anything else (cancel, general chat, or extraction failure) falls
+  through to the old model loop.
+- Code, not the model, handles: dates ("tomorrow", "Friday", "12 October" ->
+  real dates, past ones refused), the **email** (taken verbatim from what the
+  customer typed — the model had returned `...com.auau`), the **name** (only a name
+  actually typed; no more "Customer Name"), fuzzy provider choice (refuses to guess
+  when two match equally), and confirmation: a bare "yes" only books if the
+  summary was just shown for identical details; changing a detail re-asks.
+- Verified live against the real model and real ToleMate API: 4 turns ->
+  "Booked! Reference TOLEMATE-21", and booking #21 is in ToleMate's `bookings`
+  table (customer "Flow Test", test email). **That test booking and its customer
+  account are still in ToleMate's dev database.**
+- Each flow turn costs one short extraction call (~17-23s here) instead of 1-2
+  heavy agent calls; replies still arrive all at once.
+- 313 tests pass (53 new in `tests/test_booking_flow.py`).
+- **Limits:** ToleMate's API ignores time of day (it books the 10:00 slot; the
+  flow says so); an email that already has a ToleMate account is refused (no guest
+  booking API) and the customer is told to use another email or book while logged
+  in; a booking made via chat belongs to a NEW account for that email (shown via
+  "Forgot password"), not to a logged-in user's list; extraction quality depends on
+  the 3B model reading the chat correctly; cancellation is still model-driven.
+
+### Dashboard UI (added after, by request)
+Integrations page now has a **Connect a website** section: URL (+ optional
+name) → "Connect website", optional chat key shown once, live status
+(queued → reading site… → ready/failed, auto-refreshing), Re-index, Remove.
+Verified in a real headless browser: sign up → connect → key shown → status
+flipped to ready on its own in ~3s → re-index → remove.
+
+### Honest limits (not fixed here)
+- **Tool-using agents (booking) don't stream tokens.** On Ollama 0.5.7 the
+  server buffers the whole reply whenever tools are in the request (measured:
+  first token == total). Newer Ollama versions stream these; upgrading
+  Ollama is the fix, not code here. Tool turns still show a `tool` event.
+- **Booking is still slow** (cold first call measured at 74s: ~700-token
+  prompt re-evaluated at ~30 tok/s, then a second call to write the answer).
+  Q&A about the site is the fast path; booking is bound by CPU.
+- Retrieval threshold (cosine 0.45) can let a loosely-related chunk through
+  to a tool agent (seen once: a "Kathmandu" bakery chunk on a plumber
+  question — an artifact of testing a bakery site against the Tolemate
+  agent). Tune `SITE_RAG_MIN_SCORE` against the real site.
+- Dashboard UI for connecting sites is not built yet; use the API/Swagger.
+- SQLite + brute-force cosine search is fine at hundreds of chunks; Postgres
+  + pgvector is the path for large sites (already noted in `models/memory.py`).
+
+### Found and fixed along the way
+- PHP `read(1024)` on the upstream stream blocks until 1024 bytes or EOF, so
+  the Laravel relay delivered a whole 822-byte reply in one chunk at the end
+  (caught by a live Guzzle test, not visible from the Python client). Fixed
+  by reading line-by-line; re-test showed the start event at 0.37s and tokens
+  as generated.
+
+### Verified
+- `pytest -q` → **227 passed** (195 existing unchanged + 32 new: crawler
+  extraction/safety, chunking, ingest/replace/failed-recrawl, retrieval
+  scoping and budget, sites API, SSE endpoint, orchestrator streaming).
+  Includes a test that site excerpts reach the model but never persist into
+  conversation history.
+- Live against real Ollama: connect by URL → index → grounded answers,
+  including correctly declining an out-of-scope question; booking agent via
+  stream with a real tool call.
+- Not live-tested: the Laravel controller and React widget themselves
+  (Laragon/MySQL weren't running). PHP lint and a TypeScript check on the
+  touched files pass, and the Guzzle streaming mechanics were tested
+  directly.
+
 ## Fix the real cause of slow responses: Ollama prompt-cache eviction (2026-10-04) — post-roadmap, by request
 
 ### Why

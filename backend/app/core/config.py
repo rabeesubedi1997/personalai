@@ -76,6 +76,21 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
 
+    # --- Website knowledge (see app/services/site_knowledge) ---
+    # Every character of site content injected into a prompt is paid for in
+    # CPU prompt-eval time (~30 tokens/s measured here, and it can't be
+    # cached because it differs per question) — so retrieval is deliberately
+    # tight: a few small chunks under a hard character budget, not a page dump.
+    site_chunk_chars: int = 600
+    site_rag_top_k: int = 3
+    site_rag_max_chars: int = 1500
+    # Minimum embedding similarity for a chunk to count as relevant at all
+    # (below it the agent is told nothing matched rather than being fed a
+    # weak, probably-irrelevant passage).
+    site_rag_min_score: float = 0.45
+    site_crawl_max_pages: int = 30
+    site_crawl_timeout_seconds: float = 15.0
+
     # --- Agent execution limits (spec Section 8 / 32: never allow
     # infinite agent loops) ---
     agent_max_iterations: int = 6

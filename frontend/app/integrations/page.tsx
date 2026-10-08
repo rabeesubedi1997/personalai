@@ -7,14 +7,26 @@ import {
   ApiError,
   ApiKey,
   AvailableBusiness,
+  KnowledgeSite,
+  connectSite,
   createApiKey,
   deleteBusinessConnector,
+  deleteSite,
   listAgents,
   listApiKeys,
   listBusinessConnectors,
+  listSites,
+  recrawlSite,
   revokeApiKey,
   setBusinessConnector,
 } from "@/lib/api";
+
+const SITE_STATUS_BADGE: Record<KnowledgeSite["status"], { cls: string; text: string }> = {
+  pending: { cls: "badge-warn", text: "queued" },
+  crawling: { cls: "badge-warn", text: "reading site…" },
+  ready: { cls: "badge-ok", text: "ready" },
+  failed: { cls: "badge-error", text: "failed" },
+};
 
 function embedSnippet(apiKey: string, apiBaseUrl: string): string {
   return `<!-- Paste this where you want the chat widget on your site -->
@@ -48,6 +60,13 @@ export default function IntegrationsPage() {
   const [businesses, setBusinesses] = useState<AvailableBusiness[] | null>(null);
   const [urlDrafts, setUrlDrafts] = useState<Record<string, string>>({});
   const [savingBusiness, setSavingBusiness] = useState<string | null>(null);
+  const [sites, setSites] = useState<KnowledgeSite[] | null>(null);
+  const [siteUrl, setSiteUrl] = useState("");
+  const [siteName, setSiteName] = useState("");
+  const [siteWantsKey, setSiteWantsKey] = useState(true);
+  const [connectingSite, setConnectingSite] = useState(false);
+  const [siteKey, setSiteKey] = useState<{ key: string; siteName: string } | null>(null);
+  const [busySite, setBusySite] = useState<string | null>(null);
   const isAdmin = user?.role === "platform_admin";
 
   async function refresh() {
@@ -70,6 +89,65 @@ export default function IntegrationsPage() {
   useEffect(() => {
     refresh();
   }, [token]);
+
+  async function refreshSites() {
+    if (!token || !isAdmin) return;
+    try {
+      setSites(await listSites(token));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    }
+  }
+
+  useEffect(() => {
+    refreshSites();
+  }, [token, isAdmin]);
+
+  // While any site is still being read, check back every few seconds so the
+  // status flips to "ready" (or "failed") without a manual page refresh.
+  const anySiteBusy = sites?.some((s) => s.status === "pending" || s.status === "crawling");
+  useEffect(() => {
+    if (!anySiteBusy) return;
+    const timer = setInterval(refreshSites, 3000);
+    return () => clearInterval(timer);
+  }, [anySiteBusy, token, isAdmin]);
+
+  async function handleConnectSite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!token || !siteUrl.trim()) return;
+    setConnectingSite(true);
+    setError(null);
+    try {
+      const created = await connectSite(token, {
+        url: siteUrl.trim(),
+        name: siteName.trim() || undefined,
+        create_widget_key: siteWantsKey,
+      });
+      if (created.api_key) setSiteKey({ key: created.api_key, siteName: created.name });
+      setSiteUrl("");
+      setSiteName("");
+      await Promise.all([refreshSites(), refresh()]);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setConnectingSite(false);
+    }
+  }
+
+  async function handleSiteAction(id: string, action: "recrawl" | "delete") {
+    if (!token) return;
+    setBusySite(id);
+    setError(null);
+    try {
+      if (action === "recrawl") await recrawlSite(token, id);
+      else await deleteSite(token, id);
+      await refreshSites();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setBusySite(null);
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -194,6 +272,107 @@ export default function IntegrationsPage() {
           )}
         </div>
       ))}
+
+      <h2 style={{ marginTop: 24 }}>Connect a website</h2>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        Give it a site's address and the chat agents answer visitors from that site's own pages —
+        no code per site. Works for any website, including ones built with React. Re-index after
+        the site changes.
+      </p>
+
+      {siteKey && (
+        <div className="card" style={{ borderColor: "var(--success)" }}>
+          <h2 style={{ color: "var(--success)" }}>Chat key for {siteKey.siteName} — copy it now</h2>
+          <p className="muted small">
+            This is the only time the full key is shown. Paste it into the website's chat
+            settings (for ToleMate: Admin → AI Agent). Keep it on the website's server, never in
+            browser code.
+          </p>
+          <div className="tool-trace" style={{ wordBreak: "break-all" }}>
+            {siteKey.key}
+          </div>
+          <p className="muted small">
+            Agent: site_assistant (answers from the website only). Chat endpoint:{" "}
+            {process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/api/v1/public/chat/stream
+          </p>
+          <button className="btn" style={{ marginTop: 12 }} onClick={() => setSiteKey(null)} type="button">
+            Done
+          </button>
+        </div>
+      )}
+
+      {isAdmin ? (
+        <div className="card">
+          <form onSubmit={handleConnectSite} style={{ display: "grid", gap: 12 }}>
+            <input
+              className="input"
+              type="url"
+              required
+              placeholder="https://your-website.com"
+              value={siteUrl}
+              onChange={(e) => setSiteUrl(e.target.value)}
+            />
+            <input
+              className="input"
+              placeholder="Name (optional — defaults to the address)"
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+            />
+            <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={siteWantsKey}
+                onChange={(e) => setSiteWantsKey(e.target.checked)}
+              />
+              Also create a chat key for this website
+            </label>
+            <button className="btn btn-primary" type="submit" disabled={connectingSite || !siteUrl.trim()}>
+              {connectingSite ? "Connecting…" : "Connect website"}
+            </button>
+          </form>
+        </div>
+      ) : (
+        <p className="muted small">Only a platform admin can connect websites.</p>
+      )}
+
+      {isAdmin && !sites && <p className="muted small">Loading…</p>}
+      {isAdmin && sites && sites.length === 0 && <div className="empty">No websites connected yet.</div>}
+      {sites?.map((s) => {
+        const badge = SITE_STATUS_BADGE[s.status];
+        const busy = busySite === s.id || s.status === "pending" || s.status === "crawling";
+        return (
+          <div className="card" key={s.id}>
+            <div className="row">
+              <strong>{s.name}</strong>
+              <span className={`badge ${badge.cls}`}>{badge.text}</span>
+            </div>
+            <p className="muted small" style={{ marginTop: 4 }}>
+              {s.url}
+              {s.status === "ready" &&
+                ` · ${s.pages_count} pages, ${s.chunks_count} sections read` +
+                  (s.last_crawled_at ? ` · ${new Date(s.last_crawled_at).toLocaleString()}` : "")}
+            </p>
+            {s.status === "failed" && s.error && <p className="small" style={{ color: "var(--error)" }}>{s.error}</p>}
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn" type="button" disabled={busy} onClick={() => handleSiteAction(s.id, "recrawl")}>
+                Re-index
+              </button>
+              <button
+                className="btn btn-danger"
+                type="button"
+                disabled={busySite === s.id}
+                onClick={() => {
+                  if (window.confirm(`Remove ${s.name} and forget everything read from it?`)) {
+                    handleSiteAction(s.id, "delete");
+                  }
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        );
+      })}
 
       <h2 style={{ marginTop: 24 }}>Connect AI Agent (embed a chat widget elsewhere)</h2>
       {!isAdmin && (

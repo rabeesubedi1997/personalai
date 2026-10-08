@@ -17,6 +17,7 @@ from app.api.v1 import (
     public,
     requests,
     scheduler,
+    sites,
 )
 
 api_router = APIRouter()
@@ -35,4 +36,5 @@ api_router.include_router(admin.router, tags=["admin"])
 api_router.include_router(marketplace.router, tags=["marketplace"])
 api_router.include_router(integrations.router, tags=["integrations"])
 api_router.include_router(business_connectors.router, tags=["business-connectors"])
+api_router.include_router(sites.router, tags=["sites"])
 api_router.include_router(public.router, tags=["public"])

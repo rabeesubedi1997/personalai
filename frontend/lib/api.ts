@@ -272,3 +272,34 @@ export const setBusinessConnector = (
 
 export const deleteBusinessConnector = (token: string, businessSlug: string) =>
   request<void>(`/api/v1/business-connectors/${businessSlug}`, { method: "DELETE", token });
+
+// --- Connected websites (the chat agents answer from a site's own content) ---
+
+export type KnowledgeSite = {
+  id: string;
+  url: string;
+  name: string;
+  status: "pending" | "crawling" | "ready" | "failed";
+  max_pages: number;
+  render_js: boolean;
+  pages_count: number;
+  chunks_count: number;
+  error: string | null;
+  last_crawled_at: string | null;
+  created_at: string;
+};
+
+export type KnowledgeSiteCreated = KnowledgeSite & { api_key: string | null; agent_slug: string | null };
+
+export const listSites = (token: string) => request<KnowledgeSite[]>("/api/v1/sites", { token });
+
+export const connectSite = (
+  token: string,
+  body: { url: string; name?: string; create_widget_key: boolean }
+) => request<KnowledgeSiteCreated>("/api/v1/sites", { method: "POST", token, body });
+
+export const recrawlSite = (token: string, id: string) =>
+  request<KnowledgeSite>(`/api/v1/sites/${id}/recrawl`, { method: "POST", token });
+
+export const deleteSite = (token: string, id: string) =>
+  request<void>(`/api/v1/sites/${id}`, { method: "DELETE", token });
